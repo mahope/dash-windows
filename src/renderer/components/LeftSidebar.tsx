@@ -138,6 +138,7 @@ export function LeftSidebar({
                 {project.name.charAt(0).toUpperCase()}
                 {activity && (
                   <div
+                    title={activity === 'waiting' ? 'Waiting for user' : activity === 'busy' ? 'Claude is working' : 'Idle'}
                     className={`absolute -bottom-0.5 -right-0.5 w-2 h-2 rounded-full border-2 border-[hsl(var(--surface-1))] ${
                       activity === 'waiting'
                         ? 'bg-orange-500'
@@ -322,11 +323,11 @@ export function LeftSidebar({
                           >
                             {/* Status indicator */}
                             {activity === 'waiting' ? (
-                              <div className="w-[6px] h-[6px] rounded-full bg-orange-500 flex-shrink-0" />
+                              <div title="Waiting for user" className="w-[6px] h-[6px] rounded-full bg-orange-500 flex-shrink-0" />
                             ) : activity === 'busy' ? (
-                              <div className="w-[6px] h-[6px] rounded-full bg-amber-400 status-pulse flex-shrink-0" />
+                              <div title="Claude is working" className="w-[6px] h-[6px] rounded-full bg-amber-400 status-pulse flex-shrink-0" />
                             ) : activity === 'idle' ? (
-                              <div className="w-[6px] h-[6px] rounded-full bg-emerald-400 flex-shrink-0" />
+                              <div title="Idle" className="w-[6px] h-[6px] rounded-full bg-emerald-400 flex-shrink-0" />
                             ) : null}
                             {remoteControlStates[task.id] && (
                               <Globe
