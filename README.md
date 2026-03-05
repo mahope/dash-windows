@@ -1,6 +1,6 @@
-# Dash
+# Dash (Windows Fork)
 
-Desktop app for running [Claude Code](https://docs.anthropic.com/en/docs/claude-code) across multiple projects and tasks, each in its own git worktree.
+Desktop app for running [Claude Code](https://docs.anthropic.com/en/docs/claude-code) across multiple projects and tasks, each in its own git worktree. **This is a Windows-native fork** with full Windows 10/11 support.
 
 The main idea: you open a project, create tasks, and each task gets an isolated git worktree with its own branch. Claude Code runs in a real terminal (xterm.js + node-pty) inside each worktree, so you can have multiple tasks going in parallel without branch conflicts.
 
@@ -24,16 +24,33 @@ The main idea: you open a project, create tasks, and each task gets an isolated 
 - **Customizable keybindings** — Remap any shortcut from Settings.
 - **Dark/light theme**
 
+## Windows-specific changes
+
+This fork adds native Windows support on top of the upstream macOS/Linux codebase:
+
+- **Platform detection** — Centralized `isWin`/`isMac`/`isLinux` flags in `src/main/platform.ts` used across all services.
+- **PTY spawning** — Direct Claude CLI spawn uses full `process.env` on Windows (critical system variables like `SystemRoot`, `COMSPEC`, `TEMP`, `PATHEXT`). Shell spawn uses `cmd.exe` or PowerShell.
+- **Claude CLI discovery** — Searches WinGet links, npm global, and `.local/bin` paths on Windows.
+- **Activity monitoring** — Uses `PowerShell Get-CimInstance Win32_Process` instead of deprecated `wmic` (removed in Windows 11 22H2+).
+- **Git diff** — Uses `NUL` instead of `/dev/null` for untracked file diffs.
+- **Path handling** — Normalizes backslash/forward-slash for git worktree comparisons. Case-insensitive path checks on Windows filesystem.
+- **No macOS titlebar** — Skips the draggable titlebar region on Windows.
+- **Folder name extraction** — Splits on both `\` and `/` separators.
+- **Hook commands** — Uses `type` instead of `cat` for file output in hook settings.
+- **Data storage paths** — Uses `%APPDATA%/Dash/` on Windows instead of `~/Library/Application Support/Dash/`.
+
 ## Install
 
-Download the latest build from [Releases](https://github.com/syv-ai/dash/releases/tag/latest). Open the `.dmg` and drag `Dash.app` to `/Applications`.
+Download the latest `.exe` installer from [Releases](https://github.com/syv-ai/dash/releases/tag/latest), or build from source (see below).
 
 ## Prerequisites
 
+- Windows 10/11 (x64)
 - Node.js 22+
 - [pnpm](https://pnpm.io/)
 - [Claude Code CLI](https://docs.anthropic.com/en/docs/claude-code) (`npm install -g @anthropic-ai/claude-code`)
 - Git
+- Visual Studio Build Tools (for native module compilation)
 
 ## Setup
 
@@ -41,6 +58,8 @@ Download the latest build from [Releases](https://github.com/syv-ai/dash/release
 pnpm install
 pnpm rebuild  # rebuilds native modules (node-pty, better-sqlite3)
 ```
+
+> **Note:** On Windows you need the "Desktop development with C++" workload from Visual Studio Build Tools for native module compilation (node-pty, better-sqlite3).
 
 ## Development
 
@@ -61,7 +80,9 @@ npx electron dist/main/main/entry.js --dev
 
 ```bash
 pnpm build              # compile both main + renderer
+pnpm package:win        # build + package as Windows installer
 pnpm package:mac        # build + package as macOS .dmg
+pnpm package:linux      # build + package as Linux .AppImage
 ```
 
 Output goes to `release/`.
@@ -73,6 +94,7 @@ src/
 ├── main/                   # Electron main process
 │   ├── entry.ts            # App name, path aliases, loads main.ts
 │   ├── main.ts             # Boot: PATH fix, DB init, IPC, window
+│   ├── platform.ts         # Centralized platform detection (isWin, isMac, isLinux)
 │   ├── preload.ts          # contextBridge API
 │   ├── window.ts           # BrowserWindow creation
 │   ├── db/                 # SQLite + Drizzle ORM
@@ -116,17 +138,17 @@ src/
 
 ## Default keybindings
 
-| Shortcut      | Action         |
-| ------------- | -------------- |
-| `Cmd+N`       | New task       |
-| `Cmd+Shift+K` | Next task      |
-| `Cmd+Shift+J` | Previous task  |
-| `Cmd+Shift+A` | Stage all      |
-| `Cmd+Shift+U` | Unstage all    |
-| `Cmd+,`       | Settings       |
-| `Cmd+O`       | Open folder    |
-| `Cmd+`` ` ``  | Focus terminal |
-| `Esc`         | Close overlay  |
+| Shortcut       | Action         |
+| -------------- | -------------- |
+| `Ctrl+N`       | New task       |
+| `Ctrl+Shift+K` | Next task      |
+| `Ctrl+Shift+J` | Previous task  |
+| `Ctrl+Shift+A` | Stage all      |
+| `Ctrl+Shift+U` | Unstage all    |
+| `Ctrl+,`       | Settings       |
+| `Ctrl+O`       | Open folder    |
+| `Ctrl+`` ` ``  | Focus terminal |
+| `Esc`          | Close overlay  |
 
 All keybindings are customizable in Settings > Keybindings.
 
@@ -143,13 +165,13 @@ All keybindings are customizable in Settings > Keybindings.
 
 ## Data storage
 
-- **Database**: `~/Library/Application Support/Dash/app.db` (macOS)
-- **Terminal snapshots**: `~/Library/Application Support/Dash/terminal-snapshots/`
+- **Database**: `%APPDATA%/Dash/app.db` (Windows) · `~/Library/Application Support/Dash/app.db` (macOS) · `~/.config/Dash/app.db` (Linux)
+- **Terminal snapshots**: `%APPDATA%/Dash/terminal-snapshots/` (Windows) · `~/Library/Application Support/Dash/terminal-snapshots/` (macOS)
 - **Worktrees**: `{project}/../worktrees/{task-slug}/`
 
-## Acknowledgements
+## Upstream
 
-Inspired by [emdash](https://github.com/generalaction/emdash).
+Forked from [syv-ai/dash](https://github.com/syv-ai/dash). Inspired by [emdash](https://github.com/generalaction/emdash).
 
 ## License
 
