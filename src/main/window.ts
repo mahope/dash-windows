@@ -1,5 +1,6 @@
 import { BrowserWindow, shell } from 'electron';
 import * as path from 'path';
+import { isMac } from './platform';
 
 const isDev = process.argv.includes('--dev');
 
@@ -16,7 +17,7 @@ export function createWindow(): BrowserWindow {
       webviewTag: false,
       preload: path.join(__dirname, 'preload.js'),
     },
-    ...(process.platform === 'darwin' ? { titleBarStyle: 'hiddenInset' as const } : {}),
+    ...(isMac ? { titleBarStyle: 'hiddenInset' as const } : {}),
     show: false,
   });
 
@@ -32,7 +33,6 @@ export function createWindow(): BrowserWindow {
 
   if (isDev) {
     mainWindow.loadURL('http://localhost:3000');
-    mainWindow.webContents.openDevTools({ mode: 'detach' });
   } else {
     mainWindow.loadFile(path.join(__dirname, '..', '..', 'renderer', 'index.html'));
   }

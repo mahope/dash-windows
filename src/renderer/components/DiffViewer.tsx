@@ -53,14 +53,33 @@ function getLineNumber(line: DiffLine): number {
 function getLanguageFromPath(filePath: string): string {
   const ext = filePath.split('.').pop()?.toLowerCase() ?? '';
   const langMap: Record<string, string> = {
-    ts: 'typescript', tsx: 'tsx', js: 'javascript', jsx: 'jsx',
-    py: 'python', rb: 'ruby', go: 'go', rs: 'rust',
-    java: 'java', kt: 'kotlin', swift: 'swift',
-    css: 'css', scss: 'scss', html: 'html',
-    json: 'json', yaml: 'yaml', yml: 'yaml',
-    md: 'markdown', sql: 'sql', sh: 'bash',
-    c: 'c', cpp: 'cpp', h: 'c', hpp: 'cpp',
-    cs: 'csharp', php: 'php', lua: 'lua',
+    ts: 'typescript',
+    tsx: 'tsx',
+    js: 'javascript',
+    jsx: 'jsx',
+    py: 'python',
+    rb: 'ruby',
+    go: 'go',
+    rs: 'rust',
+    java: 'java',
+    kt: 'kotlin',
+    swift: 'swift',
+    css: 'css',
+    scss: 'scss',
+    html: 'html',
+    json: 'json',
+    yaml: 'yaml',
+    yml: 'yaml',
+    md: 'markdown',
+    sql: 'sql',
+    sh: 'bash',
+    c: 'c',
+    cpp: 'cpp',
+    h: 'c',
+    hpp: 'cpp',
+    cs: 'csharp',
+    php: 'php',
+    lua: 'lua',
   };
   return langMap[ext] || ext || '';
 }
@@ -404,7 +423,10 @@ export function DiffViewer({ diff, loading, activeTaskId, onClose }: DiffViewerP
         </div>
 
         {/* Content */}
-        <div ref={contentRef} className="flex-1 overflow-auto font-mono text-[12px] leading-[20px] relative">
+        <div
+          ref={contentRef}
+          className="flex-1 overflow-auto font-mono text-[12px] leading-[20px] relative"
+        >
           {loading && (
             <div className="flex items-center justify-center h-full">
               <div className="flex items-center gap-3">
@@ -531,7 +553,9 @@ export function DiffViewer({ diff, loading, activeTaskId, onClose }: DiffViewerP
                   value={popoverText}
                   onChange={(e) => setPopoverText(e.target.value)}
                   onKeyDown={(e) => {
-                    if (e.key === 'Enter' && e.metaKey) {
+                    const mod =
+                      window.electronAPI.getPlatform() === 'darwin' ? e.metaKey : e.ctrlKey;
+                    if (e.key === 'Enter' && mod) {
                       e.preventDefault();
                       handleAddComment();
                     }

@@ -157,16 +157,23 @@ function hasClaudeSession(cwd: string): boolean {
     const projectsDir = path.join(os.homedir(), '.claude', 'projects');
     if (!fs.existsSync(projectsDir)) return false;
 
-    // Check hash-based directory name
+    // Normalise path separators so Windows backslashes become forward slashes
+    const normalised = cwd.replace(/\\/g, '/');
+
+    // Check hash-based directory name (try both original and normalised)
     const cwdHash = crypto.createHash('sha256').update(cwd).digest('hex').slice(0, 16);
     if (fs.existsSync(path.join(projectsDir, cwdHash))) return true;
+    if (normalised !== cwd) {
+      const normHash = crypto.createHash('sha256').update(normalised).digest('hex').slice(0, 16);
+      if (fs.existsSync(path.join(projectsDir, normHash))) return true;
+    }
 
     // Check path-based directory name (slashes replaced with hyphens)
-    const pathBasedName = cwd.replace(/\//g, '-');
+    const pathBasedName = normalised.replace(/\//g, '-');
     if (fs.existsSync(path.join(projectsDir, pathBasedName))) return true;
 
     // Scan for partial path match (last 3 segments)
-    const cwdParts = cwd.split('/').filter((p) => p.length > 0);
+    const cwdParts = normalised.split('/').filter((p) => p.length > 0);
     const lastParts = cwdParts.slice(-3).join('-');
     const dirs = fs.readdirSync(projectsDir);
     return dirs.some((dir) => dir.includes(lastParts));

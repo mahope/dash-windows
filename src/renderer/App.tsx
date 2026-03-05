@@ -32,6 +32,7 @@ import { playNotificationSound, playPeonSound } from './sounds';
 import type { NotificationSound } from './sounds';
 
 const GIT_POLL_INTERVAL = 5000;
+const isMac = window.electronAPI.getPlatform() === 'darwin';
 
 export function App() {
   const [projects, setProjects] = useState<Project[]>([]);
@@ -403,8 +404,9 @@ export function App() {
           setShowAddProjectModal(false);
         }
       }
-      // Cmd+Shift+1..9 to jump to project by index
-      if (e.metaKey && e.shiftKey && !e.ctrlKey && !e.altKey) {
+      // Cmd+Shift+1..9 (Mac) / Ctrl+Shift+1..9 (Win) to jump to project by index
+      const mod = isMac ? e.metaKey : e.ctrlKey;
+      if (mod && e.shiftKey && !(isMac ? e.ctrlKey : e.metaKey) && !e.altKey) {
         const digit = e.code >= 'Digit1' && e.code <= 'Digit9' ? parseInt(e.code[5], 10) : 0;
         if (digit > 0 && digit <= projects.length) {
           e.preventDefault();
@@ -414,8 +416,8 @@ export function App() {
           if (tasks.length > 0) setActiveTaskId(tasks[0].id);
         }
       }
-      // Cmd+1..9 to jump to task by index
-      if (e.metaKey && !e.ctrlKey && !e.altKey && !e.shiftKey) {
+      // Cmd+1..9 (Mac) / Ctrl+1..9 (Win) to jump to task by index
+      if (mod && !(isMac ? e.ctrlKey : e.metaKey) && !e.altKey && !e.shiftKey) {
         const digit = e.key >= '1' && e.key <= '9' ? parseInt(e.key, 10) : 0;
         if (digit > 0 && digit <= activeProjectTasks.length) {
           e.preventDefault();
@@ -875,7 +877,7 @@ export function App() {
 
   return (
     <div className="h-screen w-screen flex flex-col overflow-hidden">
-      {window.electronAPI.getPlatform() === 'darwin' && (
+      {isMac && (
         <div
           className="titlebar-drag h-[38px] flex-shrink-0 border-b border-border/40"
           style={{ background: 'hsl(var(--surface-1))' }}

@@ -3,6 +3,7 @@ import * as path from 'path';
 import * as os from 'os';
 import { execFile } from 'child_process';
 import { promisify } from 'util';
+import { isWin, isMac, PATH_SEP, whichCommand } from './platform';
 
 const execFileAsync = promisify(execFile);
 
@@ -17,7 +18,7 @@ function fixPath(): void {
   const currentPath = process.env.PATH || '';
   const additions: string[] = [];
 
-  if (process.platform === 'darwin') {
+  if (isMac) {
     const home = os.homedir();
     additions.push(
       path.join(home, '.local/bin'),
@@ -42,7 +43,17 @@ function fixPath(): void {
     } catch {
       // Ignore — best effort
     }
-  } else if (process.platform === 'linux') {
+  } else if (isWin) {
+    const home = os.homedir();
+    const localAppData = process.env.LOCALAPPDATA || path.join(home, 'AppData', 'Local');
+    const appData = process.env.APPDATA || path.join(home, 'AppData', 'Roaming');
+    additions.push(
+      path.join(localAppData, 'Microsoft', 'WinGet', 'Links'),
+      path.join(appData, 'npm'),
+      path.join(home, '.local', 'bin'),
+    );
+  } else {
+    // Linux
     const home = os.homedir();
     additions.push(
       path.join(home, '.nvm/versions/node/*/bin'),
@@ -52,11 +63,11 @@ function fixPath(): void {
     );
   }
 
-  const pathSet = new Set(currentPath.split(':'));
+  const pathSet = new Set(currentPath.split(PATH_SEP));
   for (const p of additions) {
     pathSet.add(p);
   }
-  process.env.PATH = [...pathSet].join(':');
+  process.env.PATH = [...pathSet].join(PATH_SEP);
 }
 
 fixPath();
@@ -131,8 +142,7 @@ export let claudeCliCache: { installed: boolean; version: string | null; path: s
 
 async function detectClaudeCli(): Promise<void> {
   try {
-    const { stdout } = await execFileAsync('which', ['claude']);
-    const claudePath = stdout.trim();
+    const claudePath = await whichCommand('claude');
     const { stdout: versionOut } = await execFileAsync(claudePath, ['--version']);
     claudeCliCache = {
       installed: true,

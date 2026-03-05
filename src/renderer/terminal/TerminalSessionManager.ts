@@ -7,7 +7,7 @@ import { FilePathLinkProvider } from './FilePathLinkProvider';
 import { darkTheme, lightTheme, resolveTheme } from './terminalThemes';
 
 const SNAPSHOT_DEBOUNCE_MS = 10_000;
-const MEMORY_LIMIT_BYTES = 128 * 1024 * 1024; // 128MB soft limit
+const MEMORY_LIMIT_BYTES = 256 * 1024 * 1024; // 256MB soft limit
 
 export class TerminalSessionManager {
   readonly id: string;
@@ -122,6 +122,27 @@ export class TerminalSessionManager {
     this.terminal.attachCustomKeyEventHandler((e) => {
       if (e.type !== 'keydown') return true;
 
+      // Windows: Ctrl+C with active selection → copy instead of SIGINT.
+      // Without selection, fall through so xterm.js sends \x03 as normal.
+      if (
+        window.electronAPI.getPlatform() === 'win32' &&
+        e.ctrlKey &&
+        e.key === 'c' &&
+        this.terminal.hasSelection()
+      ) {
+        e.preventDefault();
+        navigator.clipboard.writeText(this.terminal.getSelection());
+        return false;
+      }
+
+      // Windows: Ctrl+V → let the browser fire a paste event so xterm.js'
+      // built-in paste handler runs (handles bracketed paste mode, line
+      // endings, etc.). Return false to stop xterm.js sending raw \x16.
+      if (window.electronAPI.getPlatform() === 'win32' && e.ctrlKey && e.key === 'v') {
+        // Don't preventDefault — the browser paste event must fire
+        return false;
+      }
+
       // Shift+Enter → Ctrl+J (multiline input for Claude Code)
       if (e.key === 'Enter' && e.shiftKey) {
         e.preventDefault();
@@ -129,21 +150,24 @@ export class TerminalSessionManager {
         return false;
       }
 
-      // Cmd+Left → Home (Ctrl+A), Cmd+Right → End (Ctrl+E), Cmd+Backspace → Kill line (Ctrl+U)
-      if (e.metaKey && e.key === 'ArrowLeft') {
-        e.preventDefault();
-        window.electronAPI.ptyInput({ id: this.id, data: '\x01' });
-        return false;
-      }
-      if (e.metaKey && e.key === 'ArrowRight') {
-        e.preventDefault();
-        window.electronAPI.ptyInput({ id: this.id, data: '\x05' });
-        return false;
-      }
-      if (e.metaKey && e.key === 'Backspace') {
-        e.preventDefault();
-        window.electronAPI.ptyInput({ id: this.id, data: '\x15' });
-        return false;
+      // macOS only: Cmd+Left → Home (Ctrl+A), Cmd+Right → End (Ctrl+E), Cmd+Backspace → Kill line (Ctrl+U)
+      // Windows natively handles Home/End/Del so these mappings are unnecessary there
+      if (window.electronAPI.getPlatform() === 'darwin') {
+        if (e.metaKey && e.key === 'ArrowLeft') {
+          e.preventDefault();
+          window.electronAPI.ptyInput({ id: this.id, data: '\x01' });
+          return false;
+        }
+        if (e.metaKey && e.key === 'ArrowRight') {
+          e.preventDefault();
+          window.electronAPI.ptyInput({ id: this.id, data: '\x05' });
+          return false;
+        }
+        if (e.metaKey && e.key === 'Backspace') {
+          e.preventDefault();
+          window.electronAPI.ptyInput({ id: this.id, data: '\x15' });
+          return false;
+        }
       }
 
       return true;
@@ -175,21 +199,31 @@ export class TerminalSessionManager {
     };
   }
 
+  private gpuContextLost = false;
+
   private async loadGpuAddon() {
     try {
       const { WebglAddon } = await import('@xterm/addon-webgl');
       const webgl = new WebglAddon();
       webgl.onContextLoss(() => {
         webgl.dispose();
+        this.gpuContextLost = true;
+        // Fall back to canvas renderer immediately
+        this.loadCanvasAddon();
       });
       this.terminal.loadAddon(webgl);
+      this.gpuContextLost = false;
     } catch {
-      try {
-        const { CanvasAddon } = await import('@xterm/addon-canvas');
-        this.terminal.loadAddon(new CanvasAddon());
-      } catch {
-        // Software renderer fallback
-      }
+      this.loadCanvasAddon();
+    }
+  }
+
+  private async loadCanvasAddon() {
+    try {
+      const { CanvasAddon } = await import('@xterm/addon-canvas');
+      this.terminal.loadAddon(new CanvasAddon());
+    } catch {
+      // Software renderer fallback
     }
   }
 
@@ -212,6 +246,11 @@ export class TerminalSessionManager {
       if (xtermEl && xtermEl.parentElement !== container) {
         container.appendChild(xtermEl);
       }
+      // Restore GPU renderer if it was lost while terminal was hidden
+      if (this.gpuContextLost) {
+        await this.loadGpuAddon();
+        if (gen !== this.attachGeneration) return;
+      }
     }
 
     // Wheel listener for scroll detection even without terminal focus
@@ -223,7 +262,10 @@ export class TerminalSessionManager {
     if (this.resizeObserver) {
       this.resizeObserver.disconnect();
     }
+    const observerGen = this.attachGeneration;
     this.resizeObserver = new ResizeObserver((entries) => {
+      // Skip if a newer attach() has replaced this observer
+      if (this.attachGeneration !== observerGen) return;
       // Skip when container is collapsed/hidden to avoid resizing PTY to 0 rows
       const rect = entries[0]?.contentRect;
       if (!rect || rect.height < 10) return;
@@ -232,8 +274,9 @@ export class TerminalSessionManager {
       // fitting at intermediate sizes which causes scroll jumps and clipping
       this.fitDebounceTimer = setTimeout(() => {
         this.fitDebounceTimer = null;
+        if (this.attachGeneration !== observerGen) return;
         this.fit();
-      }, 250);
+      }, 300);
     });
     this.resizeObserver.observe(container);
 
@@ -276,10 +319,16 @@ export class TerminalSessionManager {
         this.ptyStarted = true;
 
         if (existingSnapshot && !reattached) {
+          this.dataBuffer = [];
           try {
             this.terminal.write(existingSnapshot.data);
-          } catch {
-            // Best effort
+            const buffered = this.dataBuffer;
+            this.dataBuffer = null;
+            for (const chunk of buffered) {
+              this.terminal.write(chunk);
+            }
+          } finally {
+            this.dataBuffer = null;
           }
         }
       } else {
@@ -327,10 +376,18 @@ export class TerminalSessionManager {
 
         // Show previous snapshot for visual context while Claude starts
         if (existingSnapshot && !result.reattached) {
+          // Buffer incoming PTY data during snapshot write to prevent interleaving
+          this.dataBuffer = [];
           try {
             this.terminal.write(existingSnapshot.data);
-          } catch {
-            // Best effort
+            // Flush any buffered data
+            const buffered = this.dataBuffer;
+            this.dataBuffer = null;
+            for (const chunk of buffered) {
+              this.terminal.write(chunk);
+            }
+          } finally {
+            this.dataBuffer = null;
           }
         }
 
@@ -361,17 +418,8 @@ export class TerminalSessionManager {
 
       requestAnimationFrame(() => {
         if (gen !== this.attachGeneration) return;
-        this.fitAddon.fit();
+        this.fit();
         this.terminal.focus();
-
-        const dims = this.fitAddon.proposeDimensions();
-        if (!dims || dims.cols <= 0 || dims.rows <= 0) return;
-
-        window.electronAPI.ptyResize({
-          id: this.id,
-          cols: dims.cols,
-          rows: dims.rows,
-        });
       });
     }
   }
@@ -379,6 +427,7 @@ export class TerminalSessionManager {
   detach() {
     // Save snapshot before detaching
     this.saveSnapshot();
+    this.snapshotDirty = false;
 
     // Stop timers
     if (this.snapshotDebounceTimer) {
@@ -389,9 +438,16 @@ export class TerminalSessionManager {
       clearTimeout(this.readyFallbackTimer);
       this.readyFallbackTimer = null;
     }
+    // Clear fit timer BEFORE disconnecting observer to prevent stale fire
     if (this.fitDebounceTimer) {
       clearTimeout(this.fitDebounceTimer);
       this.fitDebounceTimer = null;
+    }
+
+    // Stop resize observer (after clearing fit timer)
+    if (this.resizeObserver) {
+      this.resizeObserver.disconnect();
+      this.resizeObserver = null;
     }
 
     // Remove wheel listener
@@ -405,12 +461,6 @@ export class TerminalSessionManager {
     this.onScrollStateChangeCallback = null;
     this.onCwdChangeCallback = null;
     this._isRestarting = false;
-
-    // Stop resize observer
-    if (this.resizeObserver) {
-      this.resizeObserver.disconnect();
-      this.resizeObserver = null;
-    }
 
     this.currentContainer = null;
     // Terminal element stays in DOM but container will be unmounted by React
@@ -431,6 +481,7 @@ export class TerminalSessionManager {
       clearTimeout(this.snapshotDebounceTimer);
       this.snapshotDebounceTimer = null;
     }
+    // Clear fit timer BEFORE disconnecting observer (Fix 6)
     if (this.fitDebounceTimer) {
       clearTimeout(this.fitDebounceTimer);
       this.fitDebounceTimer = null;
@@ -438,6 +489,11 @@ export class TerminalSessionManager {
     if (this.resizeObserver) {
       this.resizeObserver.disconnect();
       this.resizeObserver = null;
+    }
+
+    // Remove wheel listener if dispose() called without detach() (Fix 3)
+    if (this.currentContainer && this.wheelHandler) {
+      this.currentContainer.removeEventListener('wheel', this.wheelHandler);
     }
 
     if (this.unsubData) this.unsubData();
@@ -480,8 +536,28 @@ export class TerminalSessionManager {
   }
 
   scrollToBottom() {
-    this.terminal.scrollToBottom();
-    this.emitScrollState();
+    const viewport = this.terminal.element?.querySelector('.xterm-viewport');
+    if (viewport) {
+      viewport.scrollTo({ top: viewport.scrollHeight, behavior: 'smooth' });
+      // Emit state once smooth scroll finishes
+      let handled = false;
+      const onScrollEnd = () => {
+        if (handled) return;
+        handled = true;
+        this.emitScrollState();
+      };
+      viewport.addEventListener('scrollend', onScrollEnd, { once: true });
+      // Fallback if scrollend doesn't fire
+      setTimeout(() => {
+        if (!handled) {
+          viewport.removeEventListener('scrollend', onScrollEnd);
+          onScrollEnd();
+        }
+      }, 500);
+    } else {
+      this.terminal.scrollToBottom();
+      this.emitScrollState();
+    }
   }
 
   setTheme(isDark: boolean) {
@@ -615,7 +691,7 @@ export class TerminalSessionManager {
   }
 
   private fireReady() {
-    if (this.readyFired) return;
+    if (this.readyFired || this.disposed) return;
     this.readyFired = true;
     this._isRestarting = false;
     if (this.readyFallbackTimer) {
@@ -682,6 +758,7 @@ export class TerminalSessionManager {
           rows: dims?.rows ?? 30,
         })
         .then(() => {
+          if (this.disposed) return;
           this.connectPtyListeners();
         });
     });
@@ -744,9 +821,14 @@ export class TerminalSessionManager {
     if (typeof performance !== 'undefined' && 'memory' in performance) {
       const mem = (performance as unknown as { memory: { usedJSHeapSize: number } }).memory;
       if (mem.usedJSHeapSize > MEMORY_LIMIT_BYTES) {
-        this.terminal.options.scrollback = 10_000;
-        this.terminal.clear();
-        this.terminal.options.scrollback = 100_000;
+        // Gradually reduce scrollback instead of clearing all content
+        const current = this.terminal.options.scrollback ?? 100_000;
+        const reduced = Math.max(5_000, Math.floor(current / 2));
+        this.terminal.options.scrollback = reduced;
+        // Only clear as a last resort when scrollback is already minimal
+        if (reduced <= 5_000) {
+          this.terminal.clear();
+        }
       }
     }
   }

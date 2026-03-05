@@ -4,6 +4,7 @@ import { promisify } from 'util';
 import { existsSync, readFileSync } from 'fs';
 import { homedir } from 'os';
 import { join, resolve } from 'path';
+import { whichCommand } from '../platform';
 
 const execFileAsync = promisify(execFile);
 
@@ -24,7 +25,7 @@ async function detectEditor(): Promise<string> {
   // Probe for known editors
   for (const editor of ['cursor', 'code', 'zed']) {
     try {
-      await execFileAsync('which', [editor]);
+      await whichCommand(editor);
       cachedEditor = editor;
       return editor;
     } catch {
@@ -32,9 +33,9 @@ async function detectEditor(): Promise<string> {
     }
   }
 
-  // Fallback to system opener
-  cachedEditor = process.platform === 'darwin' ? 'open' : 'xdg-open';
-  return cachedEditor;
+  // Fallback: sentinel value indicating "use OS default handler"
+  cachedEditor = '__shell_open__';
+  return '__shell_open__';
 }
 
 export function registerAppIpc(): void {
@@ -132,7 +133,7 @@ export function registerAppIpc(): void {
         }
 
         // Fall back to global settings
-        const globalSettings = join(process.env.HOME || homedir(), '.claude', 'settings.json');
+        const globalSettings = join(homedir(), '.claude', 'settings.json');
         if (existsSync(globalSettings)) {
           const parsed = JSON.parse(readFileSync(globalSettings, 'utf-8'));
           if (parsed?.attribution?.commit !== undefined) {
@@ -189,8 +190,8 @@ export function registerAppIpc(): void {
                 ? `${resolved}:${args.line}`
                 : resolved;
           await execFileAsync(editor, ['-g', location]);
-        } else if (editor === 'open') {
-          await execFileAsync('open', [resolved]);
+        } else if (editor === '__shell_open__') {
+          await shell.openPath(resolved);
         } else {
           // Generic editor (vim, nano, etc.) — just open the file
           await execFileAsync(editor, [resolved]);

@@ -388,7 +388,8 @@ export function SettingsModal({
                   </div>
                 )}
                 <p className="text-[10px] text-foreground/80 mt-2">
-                  Toggle with Cmd+J. Run git, npm, and other commands alongside Claude.
+                  Toggle with {window.electronAPI.getPlatform() === 'darwin' ? 'Cmd' : 'Ctrl'}+J.
+                  Run git, npm, and other commands alongside Claude.
                 </p>
               </div>
 

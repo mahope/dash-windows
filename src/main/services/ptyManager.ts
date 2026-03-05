@@ -1,13 +1,19 @@
 import * as os from 'os';
 import * as fs from 'fs';
 import * as path from 'path';
-import { execFile } from 'child_process';
-import { promisify } from 'util';
 import { type WebContents, app } from 'electron';
 import { activityMonitor } from './ActivityMonitor';
 import { hookServer } from './HookServer';
-
-const execFileAsync = promisify(execFile);
+import {
+  isWin,
+  isMac,
+  whichCommand,
+  claudeCliCandidates,
+  catCommand,
+  userEnvVars,
+  defaultShell,
+  shellArgs,
+} from '../platform';
 
 interface PtyRecord {
   proc: any; // IPty from node-pty
@@ -77,10 +83,9 @@ async function findClaudePath(): Promise<string | null> {
     // Best effort
   }
 
-  // 2. Try `which claude` (works when PATH is correct)
+  // 2. Try `which`/`where` (works when PATH is correct)
   try {
-    const { stdout } = await execFileAsync('which', ['claude']);
-    const resolved = stdout.trim();
+    const resolved = await whichCommand('claude');
     if (resolved) {
       cachedClaudePath = resolved;
       return cachedClaudePath;
@@ -90,15 +95,10 @@ async function findClaudePath(): Promise<string | null> {
   }
 
   // 3. Direct probe common install locations
-  const home = os.homedir();
-  const candidates = [
-    path.join(home, '.local/bin/claude'),
-    '/opt/homebrew/bin/claude',
-    '/usr/local/bin/claude',
-  ];
+  const candidates = claudeCliCandidates();
   for (const candidate of candidates) {
     try {
-      await fs.promises.access(candidate, fs.constants.X_OK);
+      await fs.promises.access(candidate, isWin ? fs.constants.F_OK : fs.constants.X_OK);
       cachedClaudePath = candidate;
       return cachedClaudePath;
     } catch {
@@ -111,18 +111,36 @@ async function findClaudePath(): Promise<string | null> {
 }
 
 /**
- * Build minimal environment for direct CLI spawn (no shell config overhead).
+ * Build environment for direct CLI spawn (no shell config overhead).
+ *
+ * On macOS/Linux we use a minimal env to avoid inheriting noisy shell config.
+ * On Windows we inherit the full env because native binaries crash without
+ * critical system variables (SystemRoot, COMSPEC, TEMP, PATHEXT, etc.).
  */
 function buildDirectEnv(isDark: boolean): Record<string, string> {
+  if (isWin) {
+    // Start from full env and layer overrides on top
+    const env: Record<string, string> = { ...(process.env as Record<string, string>) };
+    env.TERM = 'xterm-256color';
+    env.COLORTERM = 'truecolor';
+    env.TERM_PROGRAM = 'dash';
+    env.COLORFGBG = isDark ? '15;0' : '0;15';
+    // Remove Electron packaging artifacts
+    delete (env as Record<string, string | undefined>).ELECTRON_RUN_AS_NODE;
+    delete (env as Record<string, string | undefined>).ELECTRON_NO_ATTACH_CONSOLE;
+    // Prevent "nested session" detection when launched from within Claude Code
+    delete (env as Record<string, string | undefined>).CLAUDECODE;
+    delete (env as Record<string, string | undefined>).CLAUDE_CODE_ENTRYPOINT;
+    return env;
+  }
+
+  // macOS / Linux: minimal env
   const env: Record<string, string> = {
     TERM: 'xterm-256color',
     COLORTERM: 'truecolor',
     TERM_PROGRAM: 'dash',
-    HOME: os.homedir(),
-    USER: os.userInfo().username,
+    ...userEnvVars(),
     PATH: process.env.PATH || '',
-    // Tell CLI apps about terminal background (rxvt convention)
-    // Format: "fg;bg" where higher values = lighter colors
     COLORFGBG: isDark ? '15;0' : '0;15',
   };
 
@@ -243,7 +261,7 @@ function writeHookSettings(cwd: string, ptyId: string): void {
         hooks: [
           {
             type: 'command',
-            command: `cat "${contextPath}"`,
+            command: catCommand(contextPath),
           },
         ],
       },
@@ -472,6 +490,7 @@ __dash_prompt_precmd
 let shellConfigDir: string | null = null;
 
 function ensureShellConfig(): string {
+  if (isWin) throw new Error('ensureShellConfig is not supported on Windows');
   if (shellConfigDir) return shellConfigDir;
 
   const dir = path.join(app.getPath('userData'), 'shell');
@@ -518,22 +537,25 @@ export async function startPty(options: {
 
   const pty = getPty();
 
-  const shell = process.env.SHELL || '/bin/bash';
-  const args = ['-il']; // Login + interactive
+  const shell = defaultShell();
+  const args = shellArgs(shell);
 
   // Clean environment for shell
   const env = { ...process.env };
   // Remove Electron packaging artifacts
   delete env.ELECTRON_RUN_AS_NODE;
   delete env.ELECTRON_NO_ATTACH_CONSOLE;
-  // Enable macOS zsh OSC 7 cwd reporting (sources /etc/zshrc_Apple_Terminal)
-  if (process.platform === 'darwin') {
-    env.TERM_PROGRAM = 'Apple_Terminal';
-  }
 
-  // Inject custom prompt for zsh via ZDOTDIR
-  if (shell.endsWith('/zsh') || shell === 'zsh') {
-    env.ZDOTDIR = ensureShellConfig();
+  if (!isWin) {
+    // Enable macOS zsh OSC 7 cwd reporting (sources /etc/zshrc_Apple_Terminal)
+    if (isMac) {
+      env.TERM_PROGRAM = 'Apple_Terminal';
+    }
+
+    // Inject custom prompt for zsh via ZDOTDIR
+    if (shell.endsWith('/zsh') || shell === 'zsh') {
+      env.ZDOTDIR = ensureShellConfig();
+    }
   }
 
   const proc = pty.spawn(shell, args, {

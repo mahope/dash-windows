@@ -123,9 +123,7 @@ function FileItem({
 
       <span className="truncate flex-1 min-w-0" title={file.path}>
         <span className="text-foreground/90">{fileName}</span>
-        {dirPath && (
-          <span className="text-muted-foreground/40 ml-1">{dirPath}/</span>
-        )}
+        {dirPath && <span className="text-muted-foreground/40 ml-1">{dirPath}/</span>}
       </span>
 
       {/* Stat badge */}
@@ -141,7 +139,9 @@ function FileItem({
       )}
 
       {/* Status badge */}
-      <span className={`w-[18px] h-[16px] rounded flex items-center justify-center text-[9px] font-bold flex-shrink-0 ${STATUS_BADGE_COLORS[file.status]}`}>
+      <span
+        className={`w-[18px] h-[16px] rounded flex items-center justify-center text-[9px] font-bold flex-shrink-0 ${STATUS_BADGE_COLORS[file.status]}`}
+      >
         {STATUS_LABELS[file.status]}
       </span>
 
@@ -149,7 +149,10 @@ function FileItem({
       {!file.staged && (
         <div className="opacity-0 group-hover:opacity-100 flex gap-px flex-shrink-0 transition-all duration-150">
           <button
-            onClick={(e) => { e.stopPropagation(); onDiscard(); }}
+            onClick={(e) => {
+              e.stopPropagation();
+              onDiscard();
+            }}
             className="p-[3px] rounded hover:bg-destructive/15 text-muted-foreground/50 hover:text-destructive"
             title="Discard changes"
           >
@@ -232,7 +235,10 @@ export function FileChangesPanel({
 
   if (!gitStatus) {
     return (
-      <div className="h-full flex items-center justify-center" style={{ background: 'hsl(var(--surface-1))' }}>
+      <div
+        className="h-full flex items-center justify-center"
+        style={{ background: 'hsl(var(--surface-1))' }}
+      >
         <p className="text-[11px] text-muted-foreground/40">
           {loading ? 'Loading...' : 'No task selected'}
         </p>
@@ -272,7 +278,10 @@ export function FileChangesPanel({
   }
 
   return (
-    <div className="h-full flex flex-col overflow-hidden" style={{ background: 'hsl(var(--surface-1))' }}>
+    <div
+      className="h-full flex flex-col overflow-hidden"
+      style={{ background: 'hsl(var(--surface-1))' }}
+    >
       {/* Header */}
       <div className="flex items-center justify-between px-3 h-10 flex-shrink-0 border-b border-border/60">
         <div className="flex items-center gap-2">
@@ -308,12 +317,14 @@ export function FileChangesPanel({
             <div className="flex items-center gap-1 text-muted-foreground/40 mr-1">
               {gitStatus.ahead > 0 && (
                 <span className="flex items-center gap-0.5 text-[9px] text-[hsl(var(--git-added))]">
-                  <ArrowUp size={8} strokeWidth={2.5} />{gitStatus.ahead}
+                  <ArrowUp size={8} strokeWidth={2.5} />
+                  {gitStatus.ahead}
                 </span>
               )}
               {gitStatus.behind > 0 && (
                 <span className="flex items-center gap-0.5 text-[9px] text-[hsl(var(--git-deleted))]">
-                  <ArrowDown size={8} strokeWidth={2.5} />{gitStatus.behind}
+                  <ArrowDown size={8} strokeWidth={2.5} />
+                  {gitStatus.behind}
                 </span>
               )}
             </div>
@@ -394,9 +405,13 @@ export function FileChangesPanel({
           )}
           <textarea
             value={commitMsg}
-            onChange={(e) => { setCommitMsg(e.target.value); setError(null); }}
+            onChange={(e) => {
+              setCommitMsg(e.target.value);
+              setError(null);
+            }}
             onKeyDown={(e) => {
-              if (e.key === 'Enter' && e.metaKey) {
+              const mod = window.electronAPI.getPlatform() === 'darwin' ? e.metaKey : e.ctrlKey;
+              if (e.key === 'Enter' && mod) {
                 e.preventDefault();
                 handleCommit();
               }

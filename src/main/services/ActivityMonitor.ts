@@ -1,6 +1,7 @@
 import { execFile } from 'child_process';
 import { promisify } from 'util';
 import type { WebContents } from 'electron';
+import { isWin } from '../platform';
 
 const execFileAsync = promisify(execFile);
 
@@ -170,32 +171,57 @@ class ActivityMonitorImpl {
   }
 
   /**
-   * Single `ps` call to build a parent→children map for the whole system.
-   * Replaces per-PID `pgrep -P` which is unreliable on macOS.
+   * Build a parent→children map for the whole system.
+   * Uses `wmic` on Windows, `ps` on Unix.
    */
   private async buildChildMap(): Promise<Map<number, number[]>> {
     const map = new Map<number, number[]>();
     try {
-      const { stdout } = await execFileAsync('ps', ['-eo', 'pid=,ppid='], {
-        timeout: 2000,
-      });
-      for (const line of stdout.split('\n')) {
-        const trimmed = line.trim();
-        if (!trimmed) continue;
-        const parts = trimmed.split(/\s+/);
-        if (parts.length < 2) continue;
-        const pid = parseInt(parts[0], 10);
-        const ppid = parseInt(parts[1], 10);
-        if (isNaN(pid) || isNaN(ppid)) continue;
-        let siblings = map.get(ppid);
-        if (!siblings) {
-          siblings = [];
-          map.set(ppid, siblings);
+      if (isWin) {
+        const { stdout } = await execFileAsync(
+          'wmic',
+          ['process', 'get', 'ProcessId,ParentProcessId', '/format:csv'],
+          { timeout: 5000 },
+        );
+        // CSV format: Node,ParentProcessId,ProcessId (first line is header)
+        for (const line of stdout.split(/\r?\n/)) {
+          const trimmed = line.trim();
+          if (!trimmed) continue;
+          const cols = trimmed.split(',');
+          // Skip header row and rows with fewer than 3 columns
+          if (cols.length < 3) continue;
+          const ppid = parseInt(cols[1], 10);
+          const pid = parseInt(cols[2], 10);
+          if (isNaN(pid) || isNaN(ppid)) continue;
+          let siblings = map.get(ppid);
+          if (!siblings) {
+            siblings = [];
+            map.set(ppid, siblings);
+          }
+          siblings.push(pid);
         }
-        siblings.push(pid);
+      } else {
+        const { stdout } = await execFileAsync('ps', ['-eo', 'pid=,ppid='], {
+          timeout: 2000,
+        });
+        for (const line of stdout.split('\n')) {
+          const trimmed = line.trim();
+          if (!trimmed) continue;
+          const parts = trimmed.split(/\s+/);
+          if (parts.length < 2) continue;
+          const pid = parseInt(parts[0], 10);
+          const ppid = parseInt(parts[1], 10);
+          if (isNaN(pid) || isNaN(ppid)) continue;
+          let siblings = map.get(ppid);
+          if (!siblings) {
+            siblings = [];
+            map.set(ppid, siblings);
+          }
+          siblings.push(pid);
+        }
       }
     } catch {
-      // ps failed — return empty map, all PTYs will show idle
+      // ps/wmic failed — return empty map, all PTYs will show idle
     }
     return map;
   }

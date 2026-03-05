@@ -3,6 +3,10 @@ import { TerminalPane } from './TerminalPane';
 import { Terminal, FolderOpen, GitBranch, Globe } from 'lucide-react';
 import type { Project, Task, RemoteControlState } from '../../shared/types';
 
+const isMac = window.electronAPI.getPlatform() === 'darwin';
+const modLabel = isMac ? '⌘' : 'Ctrl';
+const modLabelFull = isMac ? 'Cmd' : 'Ctrl';
+
 /** Convert a git remote URL (SSH or HTTPS) to a GitHub issues base URL */
 function issueUrl(remote: string | null, num: number): string | null {
   if (!remote) return null;
@@ -67,7 +71,7 @@ export function MainContent({
           </p>
           <div className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-lg bg-accent/40 text-[11px] text-muted-foreground/50">
             <kbd className="px-1.5 py-0.5 rounded bg-accent text-[10px] font-mono font-medium">
-              Cmd
+              {modLabelFull}
             </kbd>
             <span>+</span>
             <kbd className="px-1.5 py-0.5 rounded bg-accent text-[10px] font-mono font-medium">
@@ -112,7 +116,7 @@ export function MainContent({
                 {i < 9 && (
                   <div className="flex items-center gap-[2px] ml-1">
                     <kbd className="inline-flex items-center justify-center min-w-[16px] h-[16px] px-1 rounded-[3px] text-[9px] font-medium leading-none border border-border/80 bg-gradient-to-b from-white/[0.06] to-transparent text-foreground/50 shadow-[0_0.5px_0_0.5px_hsl(var(--border)/0.4),inset_0_0.5px_0_hsl(var(--foreground)/0.04)] font-mono">
-                      ⌘
+                      {modLabel}
                     </kbd>
                     <kbd className="inline-flex items-center justify-center min-w-[16px] h-[16px] px-1 rounded-[3px] text-[9px] font-medium leading-none border border-border/80 bg-gradient-to-b from-white/[0.06] to-transparent text-foreground/50 shadow-[0_0.5px_0_0.5px_hsl(var(--border)/0.4),inset_0_0.5px_0_hsl(var(--foreground)/0.04)] font-mono">
                       {i + 1}
