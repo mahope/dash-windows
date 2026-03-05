@@ -6,6 +6,7 @@ import * as crypto from 'crypto';
 import { BrowserWindow } from 'electron';
 import type { WorktreeInfo, RemoveWorktreeOptions } from '@shared/types';
 import { GithubService } from './GithubService';
+import { isWin } from '../platform';
 
 const execFileAsync = promisify(execFile);
 
@@ -94,7 +95,10 @@ export class WorktreeService {
     // Safety: never remove the project directory itself
     const normalizedProject = path.resolve(projectPath);
     const normalizedWorktree = path.resolve(worktreePath);
-    if (normalizedWorktree === normalizedProject) {
+    const pathsEqual = isWin
+      ? normalizedWorktree.toLowerCase() === normalizedProject.toLowerCase()
+      : normalizedWorktree === normalizedProject;
+    if (pathsEqual) {
       throw new Error('Cannot remove project directory as worktree');
     }
 
@@ -104,7 +108,9 @@ export class WorktreeService {
         const { stdout } = await execFileAsync('git', ['worktree', 'list', '--porcelain'], {
           cwd: projectPath,
         });
-        if (!stdout.includes(normalizedWorktree)) {
+        // Normalize to forward-slash for comparison — git worktree list uses /
+        const normalizedForCompare = normalizedWorktree.replace(/\\/g, '/');
+        if (!stdout.includes(normalizedForCompare)) {
           // Not a registered worktree, just do filesystem cleanup
           if (fs.existsSync(normalizedWorktree)) {
             fs.rmSync(normalizedWorktree, { recursive: true, force: true });

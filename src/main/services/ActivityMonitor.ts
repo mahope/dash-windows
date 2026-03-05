@@ -109,10 +109,11 @@ class ActivityMonitorImpl {
 
     const childMap = await this.buildChildMap();
     let changed = false;
+    const dead: string[] = [];
 
     for (const [id, activity] of this.activities) {
       if (!this.isProcessAlive(activity.pid)) {
-        this.activities.delete(id);
+        dead.push(id);
         changed = true;
         continue;
       }
@@ -128,6 +129,8 @@ class ActivityMonitorImpl {
         changed = true;
       }
     }
+
+    for (const id of dead) this.activities.delete(id);
 
     if (changed) {
       this.emitAll();
@@ -179,19 +182,23 @@ class ActivityMonitorImpl {
     try {
       if (isWin) {
         const { stdout } = await execFileAsync(
-          'wmic',
-          ['process', 'get', 'ProcessId,ParentProcessId', '/format:csv'],
+          'powershell',
+          [
+            '-NoProfile',
+            '-NonInteractive',
+            '-Command',
+            'Get-CimInstance Win32_Process | Select-Object ProcessId,ParentProcessId | ConvertTo-Csv -NoTypeInformation',
+          ],
           { timeout: 5000 },
         );
-        // CSV format: Node,ParentProcessId,ProcessId (first line is header)
+        // CSV format: "ProcessId","ParentProcessId" (first line is header)
         for (const line of stdout.split(/\r?\n/)) {
-          const trimmed = line.trim();
-          if (!trimmed) continue;
+          const trimmed = line.trim().replace(/"/g, '');
+          if (!trimmed || trimmed.startsWith('ProcessId')) continue;
           const cols = trimmed.split(',');
-          // Skip header row and rows with fewer than 3 columns
-          if (cols.length < 3) continue;
+          if (cols.length < 2) continue;
+          const pid = parseInt(cols[0], 10);
           const ppid = parseInt(cols[1], 10);
-          const pid = parseInt(cols[2], 10);
           if (isNaN(pid) || isNaN(ppid)) continue;
           let siblings = map.get(ppid);
           if (!siblings) {

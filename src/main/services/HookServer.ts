@@ -97,9 +97,16 @@ class HookServerImpl {
         //   title: string | undefined (e.g. "Permission needed")
         //   session_id, transcript_path, cwd, permission_mode, hook_event_name
         if (req.method === 'POST' && ptyId && url.pathname === '/hook/notification') {
+          const MAX_BODY = 64 * 1024;
           let body = '';
           req.on('data', (chunk: Buffer) => {
             body += chunk.toString();
+            if (body.length > MAX_BODY) {
+              req.destroy();
+              res.writeHead(413);
+              res.end();
+              return;
+            }
           });
           req.on('end', () => {
             try {

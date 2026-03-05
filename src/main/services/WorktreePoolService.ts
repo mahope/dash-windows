@@ -131,7 +131,7 @@ export class WorktreePoolService {
       if (shouldPush) {
         // Link branch to issues before pushing (createLinkedBranch needs the branch to not exist)
         if (linkedIssueNumbers && linkedIssueNumbers.length > 0) {
-          (async () => {
+          const linkPromise = (async () => {
             try {
               for (const num of linkedIssueNumbers) {
                 try {
@@ -159,16 +159,18 @@ export class WorktreePoolService {
               );
             }
           })();
+          // Replenish reserve after git ops complete to avoid lock conflicts
+          linkPromise.finally(() => this.ensureReserve(projectId, reserve.projectPath));
         } else {
-          // Push branch async (non-blocking)
-          execFileAsync('git', ['push', '-u', 'origin', newBranch], { cwd: newPath }).catch(
-            () => {},
-          );
+          // Push branch async, replenish after
+          execFileAsync('git', ['push', '-u', 'origin', newBranch], { cwd: newPath })
+            .catch(() => {})
+            .finally(() => this.ensureReserve(projectId, reserve.projectPath));
         }
+      } else {
+        // No push — replenish immediately
+        this.ensureReserve(projectId, reserve.projectPath);
       }
-
-      // Fire-and-forget replenish
-      this.ensureReserve(projectId, reserve.projectPath);
 
       return {
         id: worktreeService.stableIdFromPath(newPath),

@@ -1,7 +1,8 @@
 import { execFile } from 'child_process';
-import { unlinkSync } from 'fs';
-import { join } from 'path';
+import * as fs from 'fs';
+import * as path from 'path';
 import { promisify } from 'util';
+import { isWin } from '../platform';
 import type {
   FileChange,
   FileChangeStatus,
@@ -311,12 +312,13 @@ export class GitService {
   ): Promise<DiffResult> {
     const ctx = contextLines ?? 999999;
     try {
+      const nullDevice = isWin ? 'NUL' : '/dev/null';
       const out = await git(cwd, [
         'diff',
         '--no-index',
         `--unified=${ctx}`,
         '--',
-        '/dev/null',
+        nullDevice,
         filePath,
       ]);
       return this.parseDiff(out, filePath);
@@ -365,8 +367,12 @@ export class GitService {
     // First check if it's untracked
     const out = await git(cwd, ['status', '--porcelain', '--', filePath]);
     if (out.trimStart().startsWith('??')) {
-      // Untracked — remove it
-      unlinkSync(join(cwd, filePath));
+      // Untracked — remove it (with path traversal protection)
+      const resolved = path.resolve(cwd, filePath);
+      if (!resolved.startsWith(path.resolve(cwd) + path.sep)) {
+        throw new Error('Path escapes project directory');
+      }
+      await fs.promises.rm(resolved, { force: true });
     } else {
       await git(cwd, ['checkout', 'HEAD', '--', filePath]);
     }

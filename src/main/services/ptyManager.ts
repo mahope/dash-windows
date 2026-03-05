@@ -670,12 +670,14 @@ export function killAll(): void {
 export function killByOwner(owner: WebContents): void {
   for (const [id, record] of ptys) {
     if (record.owner === owner) {
+      ptys.delete(id);
+      activityMonitor.unregister(id);
+      remoteControlService.unregister(id);
       try {
         record.proc.kill();
       } catch {
-        activityMonitor.unregister(id);
+        /* already dead */
       }
-      ptys.delete(id);
     }
   }
 }

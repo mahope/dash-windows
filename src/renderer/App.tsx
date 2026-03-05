@@ -133,6 +133,8 @@ export function App() {
   const [shellDrawerAnimating, setShellDrawerAnimating] = useState(false);
   const fileWatcherCleanup = useRef<(() => void) | null>(null);
   const gitPollTimer = useRef<ReturnType<typeof setInterval> | null>(null);
+  const gitStatusSerial = useRef(0);
+  const loadedProjectIds = useRef(new Set<string>());
   const activeProject = projects.find((p) => p.id === activeProjectId) ?? null;
 
   // Find activeTask across all projects
@@ -266,12 +268,22 @@ export function App() {
     setActiveTaskId(null);
   }, [tasksByProject, activeTaskId, projects.length]);
 
-  // Load tasks for all projects when projects change
+  // Load tasks for newly added projects (not all projects on every change)
   useEffect(() => {
     for (const project of projects) {
-      loadTasksForProject(project.id);
+      if (!loadedProjectIds.current.has(project.id)) {
+        loadedProjectIds.current.add(project.id);
+        loadTasksForProject(project.id);
+      }
     }
-    // Ensure reserve worktree for active project
+    // Clean up removed projects
+    for (const id of loadedProjectIds.current) {
+      if (!projects.some((p) => p.id === id)) loadedProjectIds.current.delete(id);
+    }
+  }, [projects]);
+
+  // Ensure reserve worktree for active project
+  useEffect(() => {
     if (activeProjectId) {
       const project = projects.find((p) => p.id === activeProjectId);
       if (project) {
@@ -281,7 +293,7 @@ export function App() {
         });
       }
     }
-  }, [projects, activeProjectId]);
+  }, [activeProjectId, projects]);
 
   // Theme
   useEffect(() => {
@@ -523,16 +535,18 @@ export function App() {
   }
 
   async function refreshGitStatus(cwd: string) {
+    const serial = ++gitStatusSerial.current;
     setGitLoading(true);
     try {
       const resp = await window.electronAPI.gitGetStatus(cwd);
+      if (serial !== gitStatusSerial.current) return; // stale
       if (resp.success && resp.data) {
         setGitStatus(resp.data);
       }
     } catch {
       // Ignore
     } finally {
-      setGitLoading(false);
+      if (serial === gitStatusSerial.current) setGitLoading(false);
     }
   }
 
@@ -543,7 +557,7 @@ export function App() {
     const resp = await window.electronAPI.showOpenDialog();
     if (resp.success && resp.data && resp.data.length > 0) {
       const folderPath = resp.data[0];
-      const name = folderPath.split('/').pop() || 'Untitled';
+      const name = folderPath.split(/[\\/]/).filter(Boolean).pop() || 'Untitled';
 
       const gitResp = await window.electronAPI.detectGit(folderPath);
       const gitInfo = gitResp.success ? gitResp.data : null;
