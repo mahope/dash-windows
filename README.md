@@ -1,6 +1,11 @@
 # Dash (Windows Fork)
 
-Desktop app for running [Claude Code](https://docs.anthropic.com/en/docs/claude-code) across multiple projects and tasks, each in its own git worktree. **This is a Windows-native fork** with full Windows 10/11 support.
+> **Fork of [syv-ai/dash](https://github.com/syv-ai/dash)** — ported to Windows with native platform support, auto-updates, and additional features.
+
+[![Build](https://github.com/mahope/dash-windows/actions/workflows/build.yml/badge.svg)](https://github.com/mahope/dash-windows/actions/workflows/build.yml)
+[![Release](https://img.shields.io/github/v/release/mahope/dash-windows)](https://github.com/mahope/dash-windows/releases/latest)
+
+Desktop app for running [Claude Code](https://docs.anthropic.com/en/docs/claude-code) across multiple projects and tasks, each in its own git worktree. **This fork adds full Windows 10/11 support** with native PTY, platform-aware services, and automatic updates.
 
 The main idea: you open a project, create tasks, and each task gets an isolated git worktree with its own branch. Claude Code runs in a real terminal (xterm.js + node-pty) inside each worktree, so you can have multiple tasks going in parallel without branch conflicts.
 
@@ -42,7 +47,7 @@ This fork adds native Windows support on top of the upstream macOS/Linux codebas
 
 ## Install
 
-Download the latest `.exe` installer or `.zip` from [Releases](https://github.com/mahope/dash-windows/releases), or build from source (see below).
+Download the latest `.exe` installer or `.zip` from [**Releases**](https://github.com/mahope/dash-windows/releases/latest), or build from source (see below). The app checks for updates automatically and notifies you when a new version is available.
 
 ## Prerequisites
 
@@ -177,7 +182,15 @@ All keybindings are customizable in Settings > Keybindings.
 
 ## Upstream
 
-Forked from [syv-ai/dash](https://github.com/syv-ai/dash). Inspired by [emdash](https://github.com/generalaction/emdash).
+This is a fork of [**syv-ai/dash**](https://github.com/syv-ai/dash) with Windows-native support and additional features. Upstream changes can be merged in via:
+
+```bash
+git remote add upstream https://github.com/syv-ai/dash.git
+git fetch upstream
+git merge upstream/main
+```
+
+Inspired by [emdash](https://github.com/generalaction/emdash).
 
 ## License
 
