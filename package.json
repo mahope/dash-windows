@@ -1,6 +1,6 @@
 {
   "name": "dash",
-  "version": "0.2.0",
+  "version": "0.3.0",
   "description": "Dash — Desktop app for Claude Code with git worktree management",
   "main": "dist/main/main/entry.js",
   "author": "mhenrichsen",
@@ -36,9 +36,19 @@
     "npmRebuild": false,
     "publish": {
       "provider": "github",
-      "owner": "syv-ai",
-      "repo": "dash",
-      "releaseType": "draft"
+      "owner": "mahope",
+      "repo": "dash-windows",
+      "releaseType": "release"
+    },
+    "nsis": {
+      "oneClick": false,
+      "allowToChangeInstallationDirectory": true,
+      "installerIcon": "build/icon.ico",
+      "uninstallerIcon": "build/icon.ico",
+      "installerHeaderIcon": "build/icon.ico",
+      "createDesktopShortcut": true,
+      "createStartMenuShortcut": true,
+      "shortcutName": "Dash"
     },
     "mac": {
       "target": [

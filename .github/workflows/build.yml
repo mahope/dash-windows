@@ -28,6 +28,46 @@ jobs:
           fi
           echo "Version bumped: $MAIN_VERSION -> $PR_VERSION"
 
+  build-win:
+    runs-on: windows-latest
+
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          submodules: true
+
+      - uses: pnpm/action-setup@v4
+        with:
+          version: 9
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: pnpm
+
+      - name: Install dependencies
+        run: pnpm install
+
+      - name: Rebuild native modules for Electron
+        run: pnpm exec electron-rebuild -f -w node-pty,better-sqlite3
+
+      - name: Build
+        run: pnpm build
+
+      - name: Package
+        run: pnpm exec electron-builder --win --x64 --publish never
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Upload artifacts
+        uses: actions/upload-artifact@v4
+        with:
+          name: Dash-win-x64
+          path: |
+            release/*.exe
+            release/*.zip
+          if-no-files-found: error
+
   build-mac:
     if: github.event_name != 'pull_request'
     runs-on: macos-latest
@@ -62,6 +102,7 @@ jobs:
           CSC_KEY_PASSWORD: ${{ secrets.CSC_KEY_PASSWORD }}
 
       - name: Notarize
+        if: env.APPLE_ID != ''
         timeout-minutes: 45
         env:
           APPLE_ID: ${{ secrets.APPLE_ID }}
@@ -92,11 +133,12 @@ jobs:
               --password "$APPLE_APP_SPECIFIC_PASSWORD" \
               --team-id "$APPLE_TEAM_ID" \
               --wait --timeout 30m
-            # Note: ZIP archives cannot be stapled; the .app inside relies on
-            # online OCSP ticket lookup for Gatekeeper validation.
           fi
 
       - name: Verify code signature
+        if: env.CSC_LINK != ''
+        env:
+          CSC_LINK: ${{ secrets.CSC_LINK }}
         run: |
           APP_PATH="release/mac-arm64/Dash.app"
           echo "==> Verifying code signature..."
@@ -153,48 +195,9 @@ jobs:
             release/*.yml
           if-no-files-found: error
 
-  build-win:
-    runs-on: windows-latest
-
-    steps:
-      - uses: actions/checkout@v4
-        with:
-          submodules: true
-
-      - uses: pnpm/action-setup@v4
-        with:
-          version: 9
-
-      - uses: actions/setup-node@v4
-        with:
-          node-version: 22
-          cache: pnpm
-
-      - name: Install dependencies
-        run: pnpm install
-
-      - name: Rebuild native modules for Electron
-        run: pnpm exec electron-rebuild -f -w node-pty,better-sqlite3
-
-      - name: Build
-        run: pnpm build
-
-      - name: Package
-        run: pnpm exec electron-builder --win --x64 --publish never
-        env:
-          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-
-      - name: Upload artifacts
-        uses: actions/upload-artifact@v4
-        with:
-          name: Dash-win-x64
-          path: |
-            release/*.exe
-            release/*.zip
-          if-no-files-found: error
-
   release:
-    needs: [build-mac, build-linux, build-win]
+    if: github.event_name != 'pull_request'
+    needs: [build-win]
     runs-on: ubuntu-latest
     permissions:
       contents: write
@@ -208,11 +211,25 @@ jobs:
           VERSION=$(node -p 'require("./package.json").version')
           echo "version=v${VERSION}" >> "$GITHUB_OUTPUT"
 
-      - name: Download all artifacts
+      - name: Download Windows artifacts
         uses: actions/download-artifact@v4
         with:
+          name: Dash-win-x64
           path: artifacts
-          merge-multiple: true
+
+      - name: Download macOS artifacts
+        uses: actions/download-artifact@v4
+        with:
+          name: Dash-mac-arm64
+          path: artifacts
+        continue-on-error: true
+
+      - name: Download Linux artifacts
+        uses: actions/download-artifact@v4
+        with:
+          name: Dash-linux-x64
+          path: artifacts
+        continue-on-error: true
 
       - name: Check if version tag exists
         id: tag_check
@@ -229,6 +246,6 @@ jobs:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         run: |
           gh release create "${{ steps.version.outputs.version }}" \
-            --title "${{ steps.version.outputs.version }}" \
+            --title "Dash ${{ steps.version.outputs.version }}" \
             --generate-notes \
             artifacts/*
