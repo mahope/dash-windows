@@ -15,8 +15,14 @@
     "baseUrl": ".",
     "paths": {
       "@/*": ["./src/renderer/*"],
-      "@shared/*": ["./src/shared/*"]
+      "@shared/*": ["./src/shared/*"],
+      "@pixel-agents/*": ["./vendor/pixel-agents/webview-ui/src/*"]
     }
   },
-  "include": ["src/renderer/**/*", "src/shared/**/*", "src/types/**/*"]
+  "include": [
+    "src/renderer/**/*",
+    "src/shared/**/*",
+    "src/types/**/*",
+    "vendor/pixel-agents/webview-ui/src/**/*"
+  ]
 }

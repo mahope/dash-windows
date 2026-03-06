@@ -14,6 +14,7 @@ export default defineConfig(({ command }) => ({
     alias: {
       '@': resolve(__dirname, './src/renderer'),
       '@shared': resolve(__dirname, './src/shared'),
+      '@pixel-agents': resolve(__dirname, './vendor/pixel-agents/webview-ui/src'),
     },
   },
   server: {

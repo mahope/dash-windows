@@ -14,6 +14,8 @@ import { TERMINAL_THEMES } from '../terminal/terminalThemes';
 const DASH_DEFAULT_ATTRIBUTION =
   '\n\nCo-Authored-By: Claude <noreply@anthropic.com> via Dash <dash@syv.ai>';
 
+export type PixelAgentPosition = 'left' | 'main' | 'right';
+
 interface SettingsModalProps {
   theme: 'light' | 'dark';
   onThemeChange: (theme: 'light' | 'dark') => void;
@@ -31,6 +33,10 @@ interface SettingsModalProps {
   onTerminalThemeChange: (id: string) => void;
   commitAttribution: string | undefined;
   onCommitAttributionChange: (value: string | undefined) => void;
+  pixelAgentsEnabled: boolean;
+  onPixelAgentsEnabledChange: (value: boolean) => void;
+  pixelAgentsPosition: PixelAgentPosition;
+  onPixelAgentsPositionChange: (value: PixelAgentPosition) => void;
   activeProjectPath?: string;
   keybindings: KeyBindingMap;
   onKeybindingsChange: (bindings: KeyBindingMap) => void;
@@ -130,6 +136,10 @@ export function SettingsModal({
   onTerminalThemeChange,
   commitAttribution,
   onCommitAttributionChange,
+  pixelAgentsEnabled,
+  onPixelAgentsEnabledChange,
+  pixelAgentsPosition,
+  onPixelAgentsPositionChange,
   activeProjectPath,
   keybindings,
   onKeybindingsChange,
@@ -594,6 +604,58 @@ export function SettingsModal({
                 </div>
                 <p className="text-[10px] text-foreground/80 mt-2">
                   Applies to both Claude and shell terminals
+                </p>
+              </div>
+
+              {/* Pixel Agents */}
+              <div>
+                <label className="block text-[12px] font-medium text-foreground mb-3">
+                  Pixel Agents
+                </label>
+                <button
+                  onClick={() => onPixelAgentsEnabledChange(!pixelAgentsEnabled)}
+                  className={`flex items-center gap-3 w-full px-4 py-3 rounded-lg text-[13px] border transition-all duration-150 ${
+                    pixelAgentsEnabled
+                      ? 'border-primary/40 bg-primary/8 text-foreground ring-1 ring-primary/20'
+                      : 'border-border/60 text-foreground/60 hover:bg-accent/40 hover:text-foreground'
+                  }`}
+                >
+                  <div
+                    className={`w-8 h-[18px] rounded-full relative transition-colors duration-150 flex-shrink-0 ${
+                      pixelAgentsEnabled ? 'bg-primary' : 'bg-border'
+                    }`}
+                  >
+                    <div
+                      className={`absolute top-[2px] w-[14px] h-[14px] rounded-full bg-white shadow-sm transition-transform duration-150 ${
+                        pixelAgentsEnabled ? 'translate-x-[16px]' : 'translate-x-[2px]'
+                      }`}
+                    />
+                  </div>
+                  Show pixel art agents in office
+                </button>
+                {pixelAgentsEnabled && (
+                  <div className="grid grid-cols-3 gap-2 mt-3">
+                    {[
+                      { value: 'left' as const, label: 'Left Sidebar' },
+                      { value: 'main' as const, label: 'Main Pane' },
+                      { value: 'right' as const, label: 'Right Sidebar' },
+                    ].map(({ value, label }) => (
+                      <button
+                        key={value}
+                        onClick={() => onPixelAgentsPositionChange(value)}
+                        className={`px-3 py-2.5 rounded-lg text-[12px] border transition-all duration-150 ${
+                          pixelAgentsPosition === value
+                            ? 'border-primary/40 bg-primary/8 text-foreground ring-1 ring-primary/20 font-medium'
+                            : 'border-border/60 text-foreground/60 hover:bg-accent/40 hover:text-foreground'
+                        }`}
+                      >
+                        {label}
+                      </button>
+                    ))}
+                  </div>
+                )}
+                <p className="text-[10px] text-foreground/80 mt-2">
+                  Animated pixel art characters that visualize your agents' activity
                 </p>
               </div>
             </div>

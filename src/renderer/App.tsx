@@ -16,6 +16,8 @@ import { AddProjectModal } from './components/AddProjectModal';
 import { DeleteTaskModal } from './components/DeleteTaskModal';
 import { RemoteControlModal } from './components/RemoteControlModal';
 import { SettingsModal } from './components/SettingsModal';
+import type { PixelAgentPosition } from './components/SettingsModal';
+import { PixelAgentDrawer } from './components/PixelAgentDrawer';
 import { ToastContainer } from './components/Toast';
 import type {
   Project,
@@ -85,6 +87,13 @@ export function App() {
     if (stored === null) return undefined; // "default" — key absent
     return stored; // '' for "none", or custom text
   });
+  const [pixelAgentsEnabled, setPixelAgentsEnabled] = useState(() => {
+    return localStorage.getItem('pixelAgentsEnabled') === 'true';
+  });
+  const [pixelAgentsPosition, setPixelAgentsPosition] = useState<PixelAgentPosition>(() => {
+    return (localStorage.getItem('pixelAgentsPosition') as PixelAgentPosition) || 'left';
+  });
+
   // Sync desktop notification settings to main process
   useEffect(() => {
     window.electronAPI.setDesktopNotification?.({
@@ -150,6 +159,9 @@ export function App() {
   const activeProjectTasks = activeProjectId
     ? (tasksByProject[activeProjectId] || []).filter((t) => !t.archivedAt)
     : [];
+
+  // All task IDs that have activity (for pixel agents)
+  const pixelAgentTaskIds = Object.keys(taskActivity);
 
   // Load projects on mount
   useEffect(() => {
@@ -918,53 +930,59 @@ export function App() {
             setTimeout(() => setSidebarAnimating(false), 200);
           }}
         >
-          <ShellDrawerWrapper
-            enabled={shellDrawerEnabled && shellDrawerPosition === 'left' && !sidebarCollapsed}
-            taskId={activeTask?.id ?? null}
-            cwd={activeTask?.path ?? null}
-            collapsed={shellDrawerCollapsed}
-            label={activeTask?.useWorktree ? 'Worktree' : 'Terminal'}
-            panelRef={shellDrawerPanelRef}
-            animating={shellDrawerAnimating}
-            onAnimate={() => setShellDrawerAnimating(true)}
-            onCollapse={() => {
-              setShellDrawerCollapsed(true);
-              localStorage.setItem('shellDrawerCollapsed', 'true');
-              setTimeout(() => setShellDrawerAnimating(false), 200);
-            }}
-            onExpand={() => {
-              setShellDrawerCollapsed(false);
-              localStorage.setItem('shellDrawerCollapsed', 'false');
-              setTimeout(() => setShellDrawerAnimating(false), 200);
-            }}
+          <PixelAgentDrawer
+            enabled={pixelAgentsEnabled && pixelAgentsPosition === 'left' && !sidebarCollapsed}
+            taskActivity={taskActivity}
+            activeTaskIds={pixelAgentTaskIds}
           >
-            <LeftSidebar
-              projects={projects}
-              activeProjectId={activeProjectId}
-              onSelectProject={setActiveProjectId}
-              onOpenFolder={() => {
-                setCloneStatus({ loading: false, error: null });
-                setShowAddProjectModal(true);
+            <ShellDrawerWrapper
+              enabled={shellDrawerEnabled && shellDrawerPosition === 'left' && !sidebarCollapsed}
+              taskId={activeTask?.id ?? null}
+              cwd={activeTask?.path ?? null}
+              collapsed={shellDrawerCollapsed}
+              label={activeTask?.useWorktree ? 'Worktree' : 'Terminal'}
+              panelRef={shellDrawerPanelRef}
+              animating={shellDrawerAnimating}
+              onAnimate={() => setShellDrawerAnimating(true)}
+              onCollapse={() => {
+                setShellDrawerCollapsed(true);
+                localStorage.setItem('shellDrawerCollapsed', 'true');
+                setTimeout(() => setShellDrawerAnimating(false), 200);
               }}
-              onDeleteProject={handleDeleteProject}
-              tasksByProject={tasksByProject}
-              activeTaskId={activeTaskId}
-              onSelectTask={handleSelectTask}
-              onNewTask={handleNewTask}
-              onDeleteTask={handleDeleteTask}
-              onArchiveTask={handleArchiveTask}
-              onRestoreTask={handleRestoreTask}
-              onOpenSettings={() => setShowSettings(true)}
-              onShowCommitGraph={(projectId) => {
-                setActiveProjectId(projectId);
-                setShowCommitGraph(true);
+              onExpand={() => {
+                setShellDrawerCollapsed(false);
+                localStorage.setItem('shellDrawerCollapsed', 'false');
+                setTimeout(() => setShellDrawerAnimating(false), 200);
               }}
-              collapsed={sidebarCollapsed}
-              onToggleCollapse={toggleSidebar}
-              taskActivity={taskActivity}
-              remoteControlStates={remoteControlStates}
-            />
-          </ShellDrawerWrapper>
+            >
+              <LeftSidebar
+                projects={projects}
+                activeProjectId={activeProjectId}
+                onSelectProject={setActiveProjectId}
+                onOpenFolder={() => {
+                  setCloneStatus({ loading: false, error: null });
+                  setShowAddProjectModal(true);
+                }}
+                onDeleteProject={handleDeleteProject}
+                tasksByProject={tasksByProject}
+                activeTaskId={activeTaskId}
+                onSelectTask={handleSelectTask}
+                onNewTask={handleNewTask}
+                onDeleteTask={handleDeleteTask}
+                onArchiveTask={handleArchiveTask}
+                onRestoreTask={handleRestoreTask}
+                onOpenSettings={() => setShowSettings(true)}
+                onShowCommitGraph={(projectId) => {
+                  setActiveProjectId(projectId);
+                  setShowCommitGraph(true);
+                }}
+                collapsed={sidebarCollapsed}
+                onToggleCollapse={toggleSidebar}
+                taskActivity={taskActivity}
+                remoteControlStates={remoteControlStates}
+              />
+            </ShellDrawerWrapper>
+          </PixelAgentDrawer>
         </Panel>
         <PanelResizeHandle disabled={sidebarCollapsed} className="w-[1px] bg-border/40" />
 
@@ -972,38 +990,44 @@ export function App() {
           className={sidebarAnimating || changesAnimating ? 'panel-transition' : ''}
           minSize={35}
         >
-          <ShellDrawerWrapper
-            enabled={shellDrawerEnabled && shellDrawerPosition === 'main'}
-            taskId={activeTask?.id ?? null}
-            cwd={activeTask?.path ?? null}
-            collapsed={shellDrawerCollapsed}
-            label={activeTask?.useWorktree ? 'Worktree' : 'Terminal'}
-            panelRef={shellDrawerPanelRef}
-            animating={shellDrawerAnimating}
-            onAnimate={() => setShellDrawerAnimating(true)}
-            onCollapse={() => {
-              setShellDrawerCollapsed(true);
-              localStorage.setItem('shellDrawerCollapsed', 'true');
-              setTimeout(() => setShellDrawerAnimating(false), 200);
-            }}
-            onExpand={() => {
-              setShellDrawerCollapsed(false);
-              localStorage.setItem('shellDrawerCollapsed', 'false');
-              setTimeout(() => setShellDrawerAnimating(false), 200);
-            }}
+          <PixelAgentDrawer
+            enabled={pixelAgentsEnabled && pixelAgentsPosition === 'main'}
+            taskActivity={taskActivity}
+            activeTaskIds={pixelAgentTaskIds}
           >
-            <MainContent
-              activeTask={activeTask}
-              activeProject={activeProject}
-              sidebarCollapsed={sidebarCollapsed}
-              tasks={activeProjectTasks}
-              activeTaskId={activeTaskId}
-              taskActivity={taskActivity}
-              remoteControlStates={remoteControlStates}
-              onSelectTask={setActiveTaskId}
-              onEnableRemoteControl={(taskId) => setRemoteControlModalPtyId(taskId)}
-            />
-          </ShellDrawerWrapper>
+            <ShellDrawerWrapper
+              enabled={shellDrawerEnabled && shellDrawerPosition === 'main'}
+              taskId={activeTask?.id ?? null}
+              cwd={activeTask?.path ?? null}
+              collapsed={shellDrawerCollapsed}
+              label={activeTask?.useWorktree ? 'Worktree' : 'Terminal'}
+              panelRef={shellDrawerPanelRef}
+              animating={shellDrawerAnimating}
+              onAnimate={() => setShellDrawerAnimating(true)}
+              onCollapse={() => {
+                setShellDrawerCollapsed(true);
+                localStorage.setItem('shellDrawerCollapsed', 'true');
+                setTimeout(() => setShellDrawerAnimating(false), 200);
+              }}
+              onExpand={() => {
+                setShellDrawerCollapsed(false);
+                localStorage.setItem('shellDrawerCollapsed', 'false');
+                setTimeout(() => setShellDrawerAnimating(false), 200);
+              }}
+            >
+              <MainContent
+                activeTask={activeTask}
+                activeProject={activeProject}
+                sidebarCollapsed={sidebarCollapsed}
+                tasks={activeProjectTasks}
+                activeTaskId={activeTaskId}
+                taskActivity={taskActivity}
+                remoteControlStates={remoteControlStates}
+                onSelectTask={setActiveTaskId}
+                onEnableRemoteControl={(taskId) => setRemoteControlModalPtyId(taskId)}
+              />
+            </ShellDrawerWrapper>
+          </PixelAgentDrawer>
         </Panel>
 
         {activeTask && (
@@ -1028,43 +1052,51 @@ export function App() {
                 setTimeout(() => setChangesAnimating(false), 200);
               }}
             >
-              <ShellDrawerWrapper
+              <PixelAgentDrawer
                 enabled={
-                  shellDrawerEnabled && shellDrawerPosition === 'right' && !changesPanelCollapsed
+                  pixelAgentsEnabled && pixelAgentsPosition === 'right' && !changesPanelCollapsed
                 }
-                taskId={activeTask?.id ?? null}
-                cwd={activeTask?.path ?? null}
-                collapsed={shellDrawerCollapsed}
-                panelRef={shellDrawerPanelRef}
-                animating={shellDrawerAnimating}
-                onAnimate={() => setShellDrawerAnimating(true)}
-                onCollapse={() => {
-                  setShellDrawerCollapsed(true);
-                  localStorage.setItem('shellDrawerCollapsed', 'true');
-                  setTimeout(() => setShellDrawerAnimating(false), 200);
-                }}
-                onExpand={() => {
-                  setShellDrawerCollapsed(false);
-                  localStorage.setItem('shellDrawerCollapsed', 'false');
-                  setTimeout(() => setShellDrawerAnimating(false), 200);
-                }}
+                taskActivity={taskActivity}
+                activeTaskIds={pixelAgentTaskIds}
               >
-                <FileChangesPanel
-                  gitStatus={gitStatus}
-                  loading={gitLoading}
-                  onStageFile={handleStageFile}
-                  onUnstageFile={handleUnstageFile}
-                  onStageAll={handleStageAll}
-                  onUnstageAll={handleUnstageAll}
-                  onDiscardFile={handleDiscardFile}
-                  onViewDiff={handleViewDiff}
-                  onCommit={handleCommit}
-                  onPush={handlePush}
-                  collapsed={changesPanelCollapsed}
-                  onToggleCollapse={toggleChangesPanel}
-                  onShowCommitGraph={() => setShowCommitGraph(true)}
-                />
-              </ShellDrawerWrapper>
+                <ShellDrawerWrapper
+                  enabled={
+                    shellDrawerEnabled && shellDrawerPosition === 'right' && !changesPanelCollapsed
+                  }
+                  taskId={activeTask?.id ?? null}
+                  cwd={activeTask?.path ?? null}
+                  collapsed={shellDrawerCollapsed}
+                  panelRef={shellDrawerPanelRef}
+                  animating={shellDrawerAnimating}
+                  onAnimate={() => setShellDrawerAnimating(true)}
+                  onCollapse={() => {
+                    setShellDrawerCollapsed(true);
+                    localStorage.setItem('shellDrawerCollapsed', 'true');
+                    setTimeout(() => setShellDrawerAnimating(false), 200);
+                  }}
+                  onExpand={() => {
+                    setShellDrawerCollapsed(false);
+                    localStorage.setItem('shellDrawerCollapsed', 'false');
+                    setTimeout(() => setShellDrawerAnimating(false), 200);
+                  }}
+                >
+                  <FileChangesPanel
+                    gitStatus={gitStatus}
+                    loading={gitLoading}
+                    onStageFile={handleStageFile}
+                    onUnstageFile={handleUnstageFile}
+                    onStageAll={handleStageAll}
+                    onUnstageAll={handleUnstageAll}
+                    onDiscardFile={handleDiscardFile}
+                    onViewDiff={handleViewDiff}
+                    onCommit={handleCommit}
+                    onPush={handlePush}
+                    collapsed={changesPanelCollapsed}
+                    onToggleCollapse={toggleChangesPanel}
+                    onShowCommitGraph={() => setShowCommitGraph(true)}
+                  />
+                </ShellDrawerWrapper>
+              </PixelAgentDrawer>
             </Panel>
           </>
         )}
@@ -1128,6 +1160,16 @@ export function App() {
           onDesktopNotificationChange={(v) => {
             setDesktopNotification(v);
             localStorage.setItem('desktopNotification', String(v));
+          }}
+          pixelAgentsEnabled={pixelAgentsEnabled}
+          onPixelAgentsEnabledChange={(v) => {
+            setPixelAgentsEnabled(v);
+            localStorage.setItem('pixelAgentsEnabled', String(v));
+          }}
+          pixelAgentsPosition={pixelAgentsPosition}
+          onPixelAgentsPositionChange={(v) => {
+            setPixelAgentsPosition(v);
+            localStorage.setItem('pixelAgentsPosition', v);
           }}
           activeProjectPath={activeProject?.path}
           commitAttribution={commitAttribution}

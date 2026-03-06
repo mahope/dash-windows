@@ -12,6 +12,7 @@ The main idea: you open a project, create tasks, and each task gets an isolated 
 - **Git worktrees** — Each task gets its own worktree and branch. A reserve pool pre-creates worktrees so new tasks start instantly (<100ms).
 - **Terminal** — Full PTY terminal per task. Sessions persist when switching between tasks (state is snapshotted and restored). Shift+Enter sends multiline input. File drag-drop pastes paths. 16 terminal themes.
 - **Shell drawer** — Separate shell terminal alongside the task terminal. Configurable position (left, right, or replacing main content).
+- **Pixel Agents** — Optional animated pixel art characters that visualize your agents' activity in a miniature office. Characters type when busy, wander when idle, and show speech bubbles when waiting. Configurable position (left sidebar, main pane, or right sidebar). Powered by [pixel-agents](https://github.com/pablodelucca/pixel-agents).
 - **File changes panel** — Real-time git status with staged/unstaged sections. Stage, unstage, discard per-file. Click to view diffs.
 - **Diff viewer** — Full file or configurable context lines. Unified diff with syntax highlighting. Select lines to add inline comments and send them to the terminal.
 - **Commit graph** — Visualize branch history with a DAG-style commit graph per project.
@@ -41,7 +42,7 @@ This fork adds native Windows support on top of the upstream macOS/Linux codebas
 
 ## Install
 
-Download the latest `.exe` installer from [Releases](https://github.com/syv-ai/dash/releases/tag/latest), or build from source (see below).
+Download the latest `.exe` installer or `.zip` from [Releases](https://github.com/mahope/dash-windows/releases), or build from source (see below).
 
 ## Prerequisites
 
@@ -55,8 +56,9 @@ Download the latest `.exe` installer from [Releases](https://github.com/syv-ai/d
 ## Setup
 
 ```bash
+git submodule update --init    # fetch pixel-agents vendor code
 pnpm install
-pnpm rebuild  # rebuilds native modules (node-pty, better-sqlite3)
+pnpm rebuild                   # rebuilds native modules (node-pty, better-sqlite3)
 ```
 
 > **Note:** On Windows you need the "Desktop development with C++" workload from Visual Studio Build Tools for native module compilation (node-pty, better-sqlite3).
@@ -120,20 +122,24 @@ src/
 │   ├── App.tsx             # Root: state, keyboard shortcuts, layout
 │   ├── keybindings.ts      # Keybinding system (defaults, load/save, matching)
 │   ├── components/
-│   │   ├── LeftSidebar.tsx  # Projects + nested tasks
-│   │   ├── MainContent.tsx  # Terminal area
+│   │   ├── LeftSidebar.tsx       # Projects + nested tasks
+│   │   ├── MainContent.tsx       # Terminal area
 │   │   ├── FileChangesPanel.tsx
 │   │   ├── DiffViewer.tsx
 │   │   ├── TaskModal.tsx
 │   │   ├── SettingsModal.tsx
+│   │   ├── PixelAgentPanel.tsx   # Pixel art agent office (Canvas 2D)
+│   │   ├── PixelAgentDrawer.tsx  # Resizable wrapper for pixel agents
 │   │   └── TerminalPane.tsx
 │   └── terminal/
 │       ├── TerminalSessionManager.ts  # xterm.js lifecycle
 │       └── SessionRegistry.ts         # Session pool (preserves state on task switch)
 ├── shared/
 │   └── types.ts            # Shared types (Project, Task, GitStatus, etc.)
-└── types/
-    └── electron-api.d.ts   # window.electronAPI type declarations
+├── types/
+│   └── electron-api.d.ts   # window.electronAPI type declarations
+└── vendor/
+    └── pixel-agents/       # Git submodule: pixel art agent sprites & engine
 ```
 
 ## Default keybindings
