@@ -9,9 +9,13 @@ import type {
   DiffResult,
   BranchInfo,
   GithubIssue,
+  AzureDevOpsWorkItem,
+  AzureDevOpsConfig,
   CommitGraphData,
   CommitDetail,
   RemoteControlState,
+  TaskContextMeta,
+  PullRequestInfo,
 } from '../shared/types';
 
 export interface ElectronAPI {
@@ -28,6 +32,8 @@ export interface ElectronAPI {
     line?: number;
     col?: number;
   }) => Promise<IpcResponse<null>>;
+  openInIDE: (args: { folderPath: string; ide?: 'cursor' | 'code' }) => Promise<IpcResponse<null>>;
+  detectAvailableIDEs: () => Promise<IpcResponse<string[]>>;
 
   // Database - Projects
   getProjects: () => Promise<IpcResponse<Project[]>>;
@@ -95,7 +101,7 @@ export interface ElectronAPI {
       reattached: boolean;
       isDirectSpawn: boolean;
       hasTaskContext: boolean;
-      taskContextMeta: { issueNumbers: number[]; gitRemote?: string } | null;
+      taskContextMeta: TaskContextMeta | null;
     }>
   >;
   ptyStart: (args: {
@@ -138,7 +144,7 @@ export interface ElectronAPI {
   ptyWriteTaskContext: (args: {
     cwd: string;
     prompt: string;
-    meta?: { issueNumbers: number[]; gitRemote?: string };
+    meta?: TaskContextMeta;
   }) => Promise<IpcResponse<void>>;
 
   // App lifecycle
@@ -165,6 +171,32 @@ export interface ElectronAPI {
     issueNumber: number,
     branch: string,
   ) => Promise<IpcResponse<void>>;
+  githubGetPrForBranch: (
+    cwd: string,
+    branch: string,
+  ) => Promise<IpcResponse<PullRequestInfo | null>>;
+
+  // Azure DevOps
+  adoCheckConfigured: (projectId?: string) => Promise<IpcResponse<boolean>>;
+  adoTestConnection: (config: AzureDevOpsConfig) => Promise<IpcResponse<boolean>>;
+  adoSaveConfig: (config: AzureDevOpsConfig, projectId?: string) => Promise<IpcResponse<void>>;
+  adoGetConfig: (projectId?: string) => Promise<IpcResponse<AzureDevOpsConfig | null>>;
+  adoRemoveConfig: (projectId?: string) => Promise<IpcResponse<void>>;
+  adoSearchWorkItems: (
+    query: string,
+    projectId?: string,
+  ) => Promise<IpcResponse<AzureDevOpsWorkItem[]>>;
+  adoGetWorkItem: (id: number, projectId?: string) => Promise<IpcResponse<AzureDevOpsWorkItem>>;
+  adoPostBranchComment: (
+    workItemId: number,
+    branch: string,
+    projectId?: string,
+  ) => Promise<IpcResponse<void>>;
+  adoGetPrForBranch: (
+    branch: string,
+    gitRemote: string,
+    projectId?: string,
+  ) => Promise<IpcResponse<PullRequestInfo | null>>;
 
   // Git detection
   detectGit: (

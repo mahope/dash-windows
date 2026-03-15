@@ -395,54 +395,57 @@ export function FileChangesPanel({
         )}
       </div>
 
-      {/* Commit area */}
-      {totalChanges > 0 && (
-        <div className="flex-shrink-0 border-t border-border/60 p-2 flex flex-col gap-1.5">
-          {error && (
-            <p className="text-[11px] text-destructive bg-destructive/10 rounded px-2 py-1 break-words">
-              {error}
-            </p>
-          )}
-          <textarea
-            value={commitMsg}
-            onChange={(e) => {
-              setCommitMsg(e.target.value);
-              setError(null);
-            }}
-            onKeyDown={(e) => {
-              const mod = window.electronAPI.getPlatform() === 'darwin' ? e.metaKey : e.ctrlKey;
-              if (e.key === 'Enter' && mod) {
-                e.preventDefault();
-                handleCommit();
-              }
-            }}
-            placeholder={noneStaged ? 'Stage files to commit...' : 'Commit message'}
-            disabled={noneStaged}
-            rows={2}
-            className="w-full text-[12px] bg-background/60 border border-border/60 rounded-md px-2.5 py-1.5 resize-none placeholder:text-muted-foreground/30 focus:outline-none focus:border-primary/40 disabled:opacity-40 disabled:cursor-not-allowed"
-          />
-          <div className="flex gap-1.5">
+      {/* Commit area — always rendered to preserve textarea focus & state across git refreshes */}
+      <div
+        className="flex-shrink-0 border-t border-border/60 p-2 flex flex-col gap-1.5"
+        style={totalChanges === 0 ? { display: 'none' } : undefined}
+      >
+        {error && (
+          <p className="text-[11px] text-destructive bg-destructive/10 rounded px-2 py-1 break-words">
+            {error}
+          </p>
+        )}
+        <textarea
+          value={commitMsg}
+          onChange={(e) => {
+            setCommitMsg(e.target.value);
+            setError(null);
+          }}
+          onKeyDown={(e) => {
+            // Prevent global keyboard shortcuts from firing while typing
+            e.stopPropagation();
+            const mod = window.electronAPI.getPlatform() === 'darwin' ? e.metaKey : e.ctrlKey;
+            if (e.key === 'Enter' && mod) {
+              e.preventDefault();
+              handleCommit();
+            }
+          }}
+          placeholder={noneStaged ? 'Stage files to commit...' : 'Commit message'}
+          disabled={noneStaged}
+          rows={2}
+          className="w-full text-[12px] bg-background/60 border border-border/60 rounded-md px-2.5 py-1.5 resize-none placeholder:text-muted-foreground/30 focus:outline-none focus:border-primary/40 disabled:opacity-40 disabled:cursor-not-allowed"
+        />
+        <div className="flex gap-1.5">
+          <button
+            onClick={handleCommit}
+            disabled={!commitMsg.trim() || noneStaged || committing}
+            className="flex-1 flex items-center justify-center gap-1.5 h-7 rounded-md text-[11px] font-medium transition-colors bg-primary/15 text-primary hover:bg-primary/25 disabled:opacity-30 disabled:cursor-not-allowed"
+          >
+            <Check size={11} strokeWidth={2.5} />
+            {committing ? 'Committing...' : 'Commit'}
+          </button>
+          {gitStatus.ahead > 0 && (
             <button
-              onClick={handleCommit}
-              disabled={!commitMsg.trim() || noneStaged || committing}
-              className="flex-1 flex items-center justify-center gap-1.5 h-7 rounded-md text-[11px] font-medium transition-colors bg-primary/15 text-primary hover:bg-primary/25 disabled:opacity-30 disabled:cursor-not-allowed"
+              onClick={handlePush}
+              disabled={pushing}
+              className="flex items-center justify-center gap-1.5 h-7 px-3 rounded-md text-[11px] font-medium transition-colors bg-accent hover:bg-accent/80 text-foreground/80 disabled:opacity-30 disabled:cursor-not-allowed"
             >
-              <Check size={11} strokeWidth={2.5} />
-              {committing ? 'Committing...' : 'Commit'}
+              <Upload size={10} strokeWidth={2.5} />
+              {pushing ? 'Pushing...' : 'Push'}
             </button>
-            {gitStatus.ahead > 0 && (
-              <button
-                onClick={handlePush}
-                disabled={pushing}
-                className="flex items-center justify-center gap-1.5 h-7 px-3 rounded-md text-[11px] font-medium transition-colors bg-accent hover:bg-accent/80 text-foreground/80 disabled:opacity-30 disabled:cursor-not-allowed"
-              >
-                <Upload size={10} strokeWidth={2.5} />
-                {pushing ? 'Pushing...' : 'Push'}
-              </button>
-            )}
-          </div>
+          )}
         </div>
-      )}
+      </div>
     </div>
   );
 }

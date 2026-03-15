@@ -1,23 +1,13 @@
-import React from 'react';
+import React, { useEffect, useState } from 'react';
 import { TerminalPane } from './TerminalPane';
-import { Terminal, FolderOpen, GitBranch, Globe } from 'lucide-react';
-import type { Project, Task, RemoteControlState } from '../../shared/types';
+import { ProjectOverview } from './ProjectOverview';
+import { FolderOpen, GitBranch, Globe, GitPullRequest, Code2 } from 'lucide-react';
+import type { Project, Task, RemoteControlState, PullRequestInfo } from '../../shared/types';
+import { linkedItemUrl, isAdoRemote } from '../../shared/urls';
 
 const isMac = window.electronAPI.getPlatform() === 'darwin';
 const modLabel = isMac ? '⌘' : 'Ctrl';
 const modLabelFull = isMac ? 'Cmd' : 'Ctrl';
-
-/** Convert a git remote URL (SSH or HTTPS) to a GitHub issues base URL */
-function issueUrl(remote: string | null, num: number): string | null {
-  if (!remote) return null;
-  // git@github.com:org/repo.git → https://github.com/org/repo/issues/N
-  const ssh = remote.match(/git@github\.com:(.+?)(?:\.git)?$/);
-  if (ssh) return `https://github.com/${ssh[1]}/issues/${num}`;
-  // https://github.com/org/repo.git → https://github.com/org/repo/issues/N
-  const https = remote.match(/https:\/\/github\.com\/(.+?)(?:\.git)?$/);
-  if (https) return `https://github.com/${https[1]}/issues/${num}`;
-  return null;
-}
 
 interface MainContentProps {
   activeTask: Task | null;
@@ -29,6 +19,14 @@ interface MainContentProps {
   remoteControlStates?: Record<string, RemoteControlState>;
   onSelectTask?: (id: string) => void;
   onEnableRemoteControl?: (taskId: string) => void;
+  onNewTask?: () => void;
+  onProjectSettings?: () => void;
+  onShowCommitGraph?: () => void;
+  onDeleteProject?: () => void;
+  archivedTasks?: Task[];
+  onDeleteTask?: (id: string) => void;
+  onArchiveTask?: (id: string) => void;
+  onRestoreTask?: (id: string) => void;
 }
 
 export function MainContent({
@@ -41,7 +39,52 @@ export function MainContent({
   remoteControlStates = {},
   onSelectTask,
   onEnableRemoteControl,
+  onNewTask,
+  onProjectSettings,
+  onShowCommitGraph,
+  onDeleteProject,
+  archivedTasks = [],
+  onDeleteTask,
+  onArchiveTask,
+  onRestoreTask,
 }: MainContentProps) {
+  const [prInfo, setPrInfo] = useState<PullRequestInfo | null>(null);
+
+  useEffect(() => {
+    setPrInfo(null);
+
+    if (!activeTask?.branch || !activeProject) {
+      return;
+    }
+
+    let cancelled = false;
+    const branch = activeTask.branch;
+    const remote = activeProject.gitRemote;
+
+    (async () => {
+      try {
+        let pr: PullRequestInfo | null = null;
+
+        if (remote && isAdoRemote(remote)) {
+          const resp = await window.electronAPI.adoGetPrForBranch(branch, remote, activeProject.id);
+          if (!cancelled && resp.success) pr = resp.data ?? null;
+        } else {
+          const cwd = activeTask.path || activeProject.path;
+          const resp = await window.electronAPI.githubGetPrForBranch(cwd, branch);
+          if (!cancelled && resp.success) pr = resp.data ?? null;
+        }
+
+        if (!cancelled) setPrInfo(pr);
+      } catch {
+        if (!cancelled) setPrInfo(null);
+      }
+    })();
+
+    return () => {
+      cancelled = true;
+    };
+  }, [activeTask?.id, activeTask?.branch, activeProject?.id, activeProject?.gitRemote]);
+
   if (!activeProject) {
     return (
       <div className="h-full flex items-center justify-center bg-background">
@@ -58,28 +101,20 @@ export function MainContent({
 
   if (!activeTask) {
     return (
-      <div className="h-full flex items-center justify-center bg-background">
-        <div className="text-center animate-fade-in">
-          <div className="w-14 h-14 rounded-2xl bg-accent/60 flex items-center justify-center mx-auto mb-4">
-            <Terminal size={22} className="text-muted-foreground/40" strokeWidth={1.5} />
-          </div>
-          <h2 className="text-[15px] font-semibold text-foreground/80 mb-1.5">
-            {activeProject.name}
-          </h2>
-          <p className="text-[13px] text-muted-foreground/60 mb-3">
-            Create a task to start a Claude session
-          </p>
-          <div className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-lg bg-accent/40 text-[11px] text-muted-foreground/50">
-            <kbd className="px-1.5 py-0.5 rounded bg-accent text-[10px] font-mono font-medium">
-              {modLabelFull}
-            </kbd>
-            <span>+</span>
-            <kbd className="px-1.5 py-0.5 rounded bg-accent text-[10px] font-mono font-medium">
-              N
-            </kbd>
-          </div>
-        </div>
-      </div>
+      <ProjectOverview
+        project={activeProject}
+        tasks={tasks}
+        archivedTasks={archivedTasks}
+        taskActivity={taskActivity}
+        onSelectTask={(id) => onSelectTask?.(id)}
+        onNewTask={() => onNewTask?.()}
+        onProjectSettings={() => onProjectSettings?.()}
+        onShowCommitGraph={() => onShowCommitGraph?.()}
+        onDeleteProject={() => onDeleteProject?.()}
+        onDeleteTask={(id) => onDeleteTask?.(id)}
+        onArchiveTask={(id) => onArchiveTask?.(id)}
+        onRestoreTask={(id) => onRestoreTask?.(id)}
+      />
     );
   }
 
@@ -141,44 +176,71 @@ export function MainContent({
             <GitBranch size={11} strokeWidth={2} />
             <span className="text-[11px] font-mono">{activeTask.branch}</span>
           </div>
-          {activeTask.linkedIssues && activeTask.linkedIssues.length > 0 && (
+          {activeTask.linkedItems && activeTask.linkedItems.length > 0 ? (
             <div className="flex items-center gap-1">
-              {activeTask.linkedIssues.map((num) => {
-                const url = issueUrl(activeProject?.gitRemote ?? null, num);
+              {activeTask.linkedItems.map((item) => {
+                const url = linkedItemUrl(item, activeProject?.gitRemote ?? null);
                 return url ? (
                   <a
-                    key={num}
+                    key={`${item.provider}-${item.id}`}
                     href={url}
                     target="_blank"
                     rel="noopener noreferrer"
                     className="px-1.5 py-0.5 rounded-full bg-primary/10 text-primary text-[10px] font-medium hover:bg-primary/20 transition-colors"
+                    title={item.title || undefined}
                   >
-                    #{num}
+                    #{item.id}
                   </a>
                 ) : (
                   <span
-                    key={num}
+                    key={`${item.provider}-${item.id}`}
                     className="px-1.5 py-0.5 rounded-full bg-primary/10 text-primary text-[10px] font-medium"
+                    title={item.title || undefined}
                   >
-                    #{num}
+                    #{item.id}
                   </span>
                 );
               })}
             </div>
-          )}
-          {taskActivity[activeTask.id] && (
+          ) : null}
+          <div className="ml-auto flex items-center gap-1.5">
+            {taskActivity[activeTask.id] && (
+              <button
+                onClick={() => onEnableRemoteControl?.(activeTask.id)}
+                className={`p-1 rounded-md transition-colors ${
+                  remoteControlStates[activeTask.id]
+                    ? 'text-primary hover:bg-primary/10'
+                    : 'text-muted-foreground/50 hover:text-foreground hover:bg-accent/60'
+                }`}
+                title="Remote control"
+              >
+                <Globe size={14} strokeWidth={1.8} />
+              </button>
+            )}
             <button
-              onClick={() => onEnableRemoteControl?.(activeTask.id)}
-              className={`ml-auto p-1 rounded-md transition-colors ${
-                remoteControlStates[activeTask.id]
-                  ? 'text-primary hover:bg-primary/10'
-                  : 'text-muted-foreground/50 hover:text-foreground hover:bg-accent/60'
-              }`}
-              title="Remote control"
+              onClick={() => {
+                const stored = localStorage.getItem('preferredIDE');
+                const ide = stored === 'cursor' || stored === 'code' ? stored : undefined;
+                window.electronAPI.openInIDE({ folderPath: activeTask.path, ide });
+              }}
+              className="p-1 rounded-md transition-colors text-muted-foreground/50 hover:text-foreground hover:bg-accent/60"
+              title="Open in IDE"
             >
-              <Globe size={14} strokeWidth={1.8} />
+              <Code2 size={14} strokeWidth={1.8} />
             </button>
-          )}
+            {prInfo && (
+              <a
+                href={prInfo.url}
+                target="_blank"
+                rel="noopener noreferrer"
+                className="flex items-center gap-1 px-1.5 py-0.5 rounded-full bg-green-500/10 text-green-600 dark:text-green-400 text-[10px] font-medium hover:bg-green-500/20 transition-colors"
+                title={prInfo.title}
+              >
+                <GitPullRequest size={10} strokeWidth={2} />
+                PR #{prInfo.number}
+              </a>
+            )}
+          </div>
         </>
       )}
     </div>

@@ -115,7 +115,42 @@
 /* ── Terminal ─────────────────────────────────────────────── */
 
 .terminal-container .xterm {
-  padding: 0 16px;
+  height: 100%;
+  padding-left: 12px;
+  padding-top: 10px;
+}
+
+/* Inset left edge of absolutely-positioned children to match left padding. */
+.terminal-container .xterm .xterm-viewport,
+.terminal-container .xterm .xterm-screen {
+  left: 12px !important;
+  top: 10px !important;
+}
+
+/* Inset scrollbar away from resize handle.
+   clip-path exposes only the scrollbar track so it sits above .xterm-screen
+   (which needs pointer-events for Linkifier2 link detection). */
+.terminal-container .xterm .xterm-viewport {
+  right: 8px !important;
+  z-index: 1;
+  clip-path: inset(0 0 0 calc(100% - 16px));
+}
+
+/* Sidebar shell terminal: tighter padding */
+.terminal-drawer .xterm {
+  padding-left: 6px;
+  padding-top: 4px;
+}
+.terminal-drawer .xterm .xterm-viewport,
+.terminal-drawer .xterm .xterm-screen {
+  left: 6px !important;
+  top: 4px !important;
+}
+.terminal-drawer .xterm .xterm-viewport {
+  scrollbar-width: none !important;
+}
+.terminal-drawer .xterm .xterm-viewport::-webkit-scrollbar {
+  display: none !important;
 }
 
 /* ── Scrollbar ────────────────────────────────────────────── */

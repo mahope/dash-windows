@@ -1,4 +1,4 @@
-import { execFile } from 'child_process';
+import { execFile, exec } from 'child_process';
 import { promisify } from 'util';
 import * as path from 'path';
 import * as fs from 'fs';
@@ -9,6 +9,7 @@ import { GithubService } from './GithubService';
 import { isWin } from '../platform';
 
 const execFileAsync = promisify(execFile);
+const execAsync = promisify(exec);
 
 const PRESERVE_PATTERNS = [
   '.env',
@@ -66,6 +67,9 @@ export class WorktreeService {
         this.pushBranchAsync(worktreePath, branchName);
       }
     }
+
+    // Run worktree setup script (async, non-blocking)
+    this.runSetupScriptAsync(options.projectId, worktreePath, branchName, projectPath);
 
     const id = this.stableIdFromPath(worktreePath);
     return {
@@ -193,7 +197,7 @@ export class WorktreeService {
   /**
    * Copy preserved files (.env, etc) from source to target.
    */
-  private async preserveFiles(from: string, to: string): Promise<void> {
+  async preserveFiles(from: string, to: string): Promise<void> {
     for (const pattern of PRESERVE_PATTERNS) {
       // Simple glob: if no wildcard, just check exact file
       if (!pattern.includes('*')) {
@@ -268,6 +272,50 @@ export class WorktreeService {
     execFileAsync('git', ['push', '-u', 'origin', branch], { cwd }).catch(() => {
       // Best effort — no remote is fine
     });
+  }
+
+  /**
+   * Run the project's worktree setup script in the new worktree directory.
+   * Async, non-blocking — sends a toast on failure.
+   */
+  runSetupScriptAsync(
+    projectId: string,
+    worktreePath: string,
+    branchName: string,
+    projectPath: string,
+  ): void {
+    (async () => {
+      try {
+        const { DatabaseService } = await import('./DatabaseService');
+        const projects = DatabaseService.getProjects();
+        const project = projects.find((p) => p.id === projectId);
+        if (!project?.worktreeSetupScript) return;
+
+        await execAsync(project.worktreeSetupScript, {
+          cwd: worktreePath,
+          timeout: 60_000,
+          env: {
+            ...process.env,
+            DASH_WORKTREE_PATH: worktreePath,
+            DASH_PROJECT_PATH: projectPath,
+            DASH_BRANCH: branchName,
+          },
+        });
+      } catch (error: unknown) {
+        const stderr =
+          error && typeof error === 'object' && 'stderr' in error
+            ? String((error as { stderr: unknown }).stderr).trim()
+            : '';
+        const msg = stderr || (error instanceof Error ? error.message : String(error));
+        for (const win of BrowserWindow.getAllWindows()) {
+          if (!win.isDestroyed()) {
+            win.webContents.send('app:toast', {
+              message: `Worktree setup script failed: ${msg.slice(0, 200)}`,
+            });
+          }
+        }
+      }
+    })();
   }
 
   getWorktreesDir(projectPath: string): string {

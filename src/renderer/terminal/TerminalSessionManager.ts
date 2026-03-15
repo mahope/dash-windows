@@ -43,6 +43,7 @@ export class TerminalSessionManager {
   private lastPtyCols = 0;
   private lastPtyRows = 0;
   private writeScrollRafPending = false;
+  private savedViewportY: number | null = null;
   readonly shellOnly: boolean;
   private themeId: string;
   constructor(opts: {
@@ -92,12 +93,21 @@ export class TerminalSessionManager {
         this.terminal,
         () => this._currentCwd,
         (filePath, line, col) => {
-          window.electronAPI.openInEditor({
-            cwd: this._currentCwd,
-            filePath,
-            line,
-            col,
-          });
+          window.electronAPI
+            .openInEditor({
+              cwd: this._currentCwd,
+              filePath,
+              line,
+              col,
+            })
+            .then((res) => {
+              if (!res.success) {
+                console.warn('[FilePathLink] openInEditor failed:', res.error);
+              }
+            })
+            .catch((err) => {
+              console.warn('[FilePathLink] openInEditor error:', err);
+            });
         },
       ),
     );
@@ -202,23 +212,27 @@ export class TerminalSessionManager {
   private gpuContextLost = false;
 
   private async loadGpuAddon() {
-    try {
-      const { WebglAddon } = await import('@xterm/addon-webgl');
-      const webgl = new WebglAddon();
-      webgl.onContextLoss(() => {
-        webgl.dispose();
-        this.gpuContextLost = true;
-        // Fall back to canvas renderer immediately
-        this.loadCanvasAddon();
-      });
-      this.terminal.loadAddon(webgl);
-      this.gpuContextLost = false;
-    } catch {
-      this.loadCanvasAddon();
-    }
-  }
+    // On Linux, WebGL has compositing bugs that cause the terminal canvas to
+    // go blank when content updates (typing, output). Skip straight to Canvas.
+    const isLinux = navigator.userAgent.includes('Linux');
 
-  private async loadCanvasAddon() {
+    if (!isLinux) {
+      try {
+        const { WebglAddon } = await import('@xterm/addon-webgl');
+        const webgl = new WebglAddon();
+        webgl.onContextLoss(() => {
+          webgl.dispose();
+          this.gpuContextLost = true;
+          this.loadGpuAddon();
+        });
+        this.terminal.loadAddon(webgl);
+        this.gpuContextLost = false;
+        return;
+      } catch {
+        // Fall through to canvas
+      }
+    }
+
     try {
       const { CanvasAddon } = await import('@xterm/addon-canvas');
       this.terminal.loadAddon(new CanvasAddon());
@@ -227,7 +241,7 @@ export class TerminalSessionManager {
     }
   }
 
-  async attach(container: HTMLElement) {
+  async attach(container: HTMLElement, opts?: { autoFocus?: boolean }) {
     const gen = ++this.attachGeneration;
     if (this.disposed) return;
     this.currentContainer = container;
@@ -236,6 +250,11 @@ export class TerminalSessionManager {
       // First time: open xterm in this container
       this.terminal.open(container);
       this.opened = true;
+      // Sync .xterm background so padding gutters match the theme
+      const bg = resolveTheme(this.themeId, this.isDark).background;
+      if (this.terminal.element && bg) {
+        this.terminal.element.style.backgroundColor = bg;
+      }
       // Load GPU addon after terminal is in DOM
       await this.loadGpuAddon();
       // After yielding, check if a newer attach() has started (React remount)
@@ -294,6 +313,12 @@ export class TerminalSessionManager {
     let reattached = false;
     let isDirectSpawn = false;
     if (!this.ptyStarted) {
+      // Buffer PTY data while we start the process and restore the snapshot.
+      // connectPtyListeners() checks dataBuffer and pushes into it instead
+      // of writing directly to the terminal. We flush after setup completes.
+      this.dataBuffer = [];
+      this.connectPtyListeners();
+
       if (this.shellOnly) {
         // Shell-only mode: just spawn a shell, skip Claude CLI
         let existingSnapshot: TerminalSnapshot | null = null;
@@ -311,7 +336,7 @@ export class TerminalSessionManager {
         const shellResp = await window.electronAPI.ptyStart({
           id: this.id,
           cwd: this.cwd,
-          cols: dims?.cols ?? 120,
+          cols: this.ptyCols(dims?.cols ?? 120),
           rows: dims?.rows ?? 30,
         });
         if (gen !== this.attachGeneration) return;
@@ -361,6 +386,8 @@ export class TerminalSessionManager {
           this._isRestarting = true;
           this.readyFired = false;
           this.onRestartingCallback?.();
+          // Discard any data buffered from the old PTY before killing it
+          this.dataBuffer = [];
           window.electronAPI.ptyKill(this.id);
           this.ptyStarted = false;
           result = await this.startPty(resume);
@@ -391,17 +418,30 @@ export class TerminalSessionManager {
           }
         }
 
-        // Show info line when issue context was injected via SessionStart hook
+        // Show info line when context was injected via SessionStart hook
         if (result.taskContextMeta && !result.reattached && !resume) {
-          const { issueNumbers, gitRemote } = result.taskContextMeta;
-          const issueLabels = issueNumbers.map((num) => {
-            const url = gitRemote ? this.issueUrl(gitRemote, num) : null;
-            // OSC 8 hyperlink: \x1b]8;;URL\x07TEXT\x1b]8;;\x07
-            return url ? `\x1b]8;;${url}\x07#${num}\x1b]8;;\x07` : `#${num}`;
-          });
-          this.terminal.write(
-            `\x1b[2m\x1b[36m● Issue context injected: ${issueLabels.join(', ')}\x1b[0m\r\n`,
-          );
+          const { githubIssues, adoWorkItems } = result.taskContextMeta;
+
+          if (githubIssues && githubIssues.length > 0) {
+            const issueLabels = githubIssues.map((issue) => {
+              // OSC 8 hyperlink: \x1b]8;;URL\x07TEXT\x1b]8;;\x07
+              return issue.url
+                ? `\x1b]8;;${issue.url}\x07#${issue.id}\x1b]8;;\x07`
+                : `#${issue.id}`;
+            });
+            this.terminal.write(
+              `\x1b[2m\x1b[36m● Issue context injected: ${issueLabels.join(', ')}\x1b[0m\r\n`,
+            );
+          }
+
+          if (adoWorkItems && adoWorkItems.length > 0) {
+            const wiLabels = adoWorkItems.map((wi) => {
+              return wi.url ? `\x1b]8;;${wi.url}\x07#${wi.id}\x1b]8;;\x07` : `#${wi.id}`;
+            });
+            this.terminal.write(
+              `\x1b[2m\x1b[36m● Work item context injected: ${wiLabels.join(', ')}\x1b[0m\r\n`,
+            );
+          }
         }
       }
     }
@@ -414,17 +454,63 @@ export class TerminalSessionManager {
         this.terminal.write('\x1b[?25l');
       }
 
-      this.connectPtyListeners();
+      // If we buffered PTY data during startup, flush it now that the
+      // snapshot has been restored and the terminal is ready.
+      if (this.dataBuffer !== null) {
+        const buffered = this.dataBuffer;
+        this.dataBuffer = null;
+        for (const chunk of buffered) {
+          this.terminal.write(chunk);
+        }
+        if (buffered.length > 0) {
+          this.snapshotDirty = true;
+          this.debounceSaveSnapshot();
+        }
+      }
+
+      // Re-attach path: listeners weren't set up above, connect them now
+      if (!this.unsubData) {
+        this.connectPtyListeners();
+      }
 
       requestAnimationFrame(() => {
         if (gen !== this.attachGeneration) return;
+        // Disable focus reporting before focusing — a restored snapshot or
+        // previous Ink process may have left it enabled, and the focus event
+        // would send \x1b[I as PTY input before the new Ink process is ready,
+        // causing stray "O"/"I" chars in the input field.
+        this.terminal.write('\x1b[?1004l');
         this.fit();
-        this.terminal.focus();
+        if (opts?.autoFocus !== false) {
+          this.terminal.focus();
+        }
+
+        if (this.savedViewportY !== null) {
+          this.forceScrollToLine(this.savedViewportY);
+          this.savedViewportY = null;
+        }
+
+        // Use fit() dedup logic — avoid redundant SIGWINCH that can cause
+        // the shell to redraw while the user is already typing
+        const dims = this.fitAddon.proposeDimensions();
+        if (!dims) return;
+        const cols = this.ptyCols(dims.cols);
+        if (cols !== this.lastPtyCols || dims.rows !== this.lastPtyRows) {
+          this.lastPtyCols = cols;
+          this.lastPtyRows = dims.rows;
+          window.electronAPI.ptyResize({
+            id: this.id,
+            cols,
+            rows: dims.rows,
+          });
+        }
       });
     }
   }
 
   detach() {
+    this.savedViewportY = this.terminal.buffer.active.viewportY;
+
     // Save snapshot before detaching
     this.saveSnapshot();
     this.snapshotDirty = false;
@@ -567,21 +653,28 @@ export class TerminalSessionManager {
   setTerminalTheme(themeId: string, isDark: boolean) {
     this.themeId = themeId;
     this.isDark = isDark;
+    const theme = resolveTheme(themeId, isDark);
     try {
-      this.terminal.options.theme = resolveTheme(themeId, isDark);
+      this.terminal.options.theme = theme;
     } catch {
       // WebGL addon may crash if GPU context is lost (e.g. hidden terminal).
       // Re-apply after reloading the addon on next attach.
+    }
+
+    // Sync .xterm background so padding gutters match the theme
+    if (this.terminal.element && theme.background) {
+      this.terminal.element.style.backgroundColor = theme.background;
     }
 
     // Trigger SIGWINCH so the TUI redraws with the new ANSI palette.
     // rows+1 then rows forces the PTY process to handle SIGWINCH.
     if (this.ptyStarted && this.opened) {
       const dims = this.fitAddon.proposeDimensions();
-      if (dims && dims.cols > 0 && dims.rows > 0) {
-        window.electronAPI.ptyResize({ id: this.id, cols: dims.cols, rows: dims.rows + 1 });
+      if (dims) {
+        const cols = this.ptyCols(dims.cols);
+        window.electronAPI.ptyResize({ id: this.id, cols, rows: dims.rows + 1 });
         setTimeout(() => {
-          window.electronAPI.ptyResize({ id: this.id, cols: dims.cols, rows: dims.rows });
+          window.electronAPI.ptyResize({ id: this.id, cols, rows: dims.rows });
         }, 50);
       }
     }
@@ -592,18 +685,31 @@ export class TerminalSessionManager {
     await this.saveSnapshot();
   }
 
+  /** Reserve columns so the TUI doesn't render into the right edge. */
+  private static readonly COL_RESERVE = 5;
+  private static readonly COL_RESERVE_SHELL = 1;
+
+  /** Reduce cols for PTY so the TUI leaves a right-side gutter. */
+  private ptyCols(cols: number): number {
+    const reserve = this.shellOnly
+      ? TerminalSessionManager.COL_RESERVE_SHELL
+      : TerminalSessionManager.COL_RESERVE;
+    return Math.max(1, cols - reserve);
+  }
+
   private fit() {
     try {
       this.fitAddon.fit();
       const dims = this.fitAddon.proposeDimensions();
       if (dims && dims.cols > 0 && dims.rows > 0) {
+        const cols = this.ptyCols(dims.cols);
         // Skip redundant PTY resizes to avoid SIGWINCH prompt redraw
-        if (dims.cols === this.lastPtyCols && dims.rows === this.lastPtyRows) return;
-        this.lastPtyCols = dims.cols;
+        if (cols === this.lastPtyCols && dims.rows === this.lastPtyRows) return;
+        this.lastPtyCols = cols;
         this.lastPtyRows = dims.rows;
         window.electronAPI.ptyResize({
           id: this.id,
-          cols: dims.cols,
+          cols,
           rows: dims.rows,
         });
       }
@@ -612,26 +718,18 @@ export class TerminalSessionManager {
     }
   }
 
-  private issueUrl(remote: string, num: number): string | null {
-    const ssh = remote.match(/git@github\.com:(.+?)(?:\.git)?$/);
-    if (ssh) return `https://github.com/${ssh[1]}/issues/${num}`;
-    const https = remote.match(/https:\/\/github\.com\/(.+?)(?:\.git)?$/);
-    if (https) return `https://github.com/${https[1]}/issues/${num}`;
-    return null;
-  }
-
   private async startPty(resume: boolean = false): Promise<{
     reattached: boolean;
     isDirectSpawn: boolean;
-    taskContextMeta: { issueNumbers: number[]; gitRemote?: string } | null;
+    taskContextMeta: import('../../shared/types').TaskContextMeta | null;
   }> {
     const dims = this.fitAddon.proposeDimensions();
-    const cols = dims?.cols ?? 120;
+    const cols = this.ptyCols(dims?.cols ?? 120);
     const rows = dims?.rows ?? 30;
 
     let reattached = false;
     let isDirectSpawn = false;
-    let taskContextMeta: { issueNumbers: number[]; gitRemote?: string } | null = null;
+    let taskContextMeta: import('../../shared/types').TaskContextMeta | null = null;
 
     const resp = await window.electronAPI.ptyStartDirect({
       id: this.id,
@@ -754,7 +852,7 @@ export class TerminalSessionManager {
         .ptyStart({
           id: this.id,
           cwd: this.cwd,
-          cols: dims?.cols ?? 120,
+          cols: this.ptyCols(dims?.cols ?? 120),
           rows: dims?.rows ?? 30,
         })
         .then(() => {
@@ -802,6 +900,20 @@ export class TerminalSessionManager {
       // Best effort
     }
     return false;
+  }
+
+  /**
+   * scrollToLine(n) is a no-op when viewportY already equals n — xterm skips
+   * the scroll event so the Viewport never syncs the DOM scrollTop. After a
+   * DOM re-attach (appendChild), scrollTop resets to 0 but viewportY keeps its
+   * old value, leaving them desynced. Force the event by scrolling away first.
+   */
+  private forceScrollToLine(line: number) {
+    const buf = this.terminal.buffer.active;
+    if (buf.viewportY === line) {
+      this.terminal.scrollToLine(line > 0 ? line - 1 : line + 1);
+    }
+    this.terminal.scrollToLine(line);
   }
 
   private isAtBottom(): boolean {

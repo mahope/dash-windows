@@ -34,7 +34,14 @@ interface TerminalDrawerProps {
   onExpand: () => void;
 }
 
-export function TerminalDrawer({ taskId, cwd, collapsed, label = 'Terminal', onCollapse, onExpand }: TerminalDrawerProps) {
+export function TerminalDrawer({
+  taskId,
+  cwd,
+  collapsed,
+  label = 'Terminal',
+  onCollapse,
+  onExpand,
+}: TerminalDrawerProps) {
   const containerRef = useRef<HTMLDivElement>(null);
   const shellId = `shell:${taskId}`;
   const [displayCwd, setDisplayCwd] = useState(cwd);
@@ -54,7 +61,7 @@ export function TerminalDrawer({ taskId, cwd, collapsed, label = 'Terminal', onC
       cwd,
       shellOnly: true,
     });
-    session.attach(container);
+    session.attach(container, { autoFocus: false });
 
     setDisplayCwd(session.currentCwd);
 
@@ -67,9 +74,13 @@ export function TerminalDrawer({ taskId, cwd, collapsed, label = 'Terminal', onC
     };
   }, [shellId, cwd]);
 
-  // Focus terminal when expanding
+  // Focus terminal when the user explicitly expands the drawer
+  const prevCollapsedRef = useRef(collapsed);
   useEffect(() => {
-    if (!collapsed) {
+    const wasCollapsed = prevCollapsedRef.current;
+    prevCollapsedRef.current = collapsed;
+
+    if (wasCollapsed && !collapsed) {
       const session = sessionRegistry.get(shellId);
       if (session) {
         requestAnimationFrame(() => session.focus());
@@ -112,7 +123,7 @@ export function TerminalDrawer({ taskId, cwd, collapsed, label = 'Terminal', onC
       {/* Terminal container always in DOM to avoid re-attach on expand */}
       <div
         ref={containerRef}
-        className="terminal-container flex-1 min-h-0"
+        className="terminal-container terminal-drawer flex-1 min-h-0"
         style={collapsed ? { height: 0, overflow: 'hidden' } : undefined}
       />
     </div>

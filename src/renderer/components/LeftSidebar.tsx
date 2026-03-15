@@ -1,4 +1,4 @@
-import React, { useState } from 'react';
+import React, { useState, useRef } from 'react';
 import {
   FolderOpen,
   Plus,
@@ -23,6 +23,7 @@ interface LeftSidebarProps {
   onSelectProject: (id: string) => void;
   onOpenFolder: () => void;
   onDeleteProject: (id: string) => void;
+  onProjectSettings: (id: string) => void;
   tasksByProject: Record<string, Task[]>;
   activeTaskId: string | null;
   onSelectTask: (projectId: string, taskId: string) => void;
@@ -36,6 +37,7 @@ interface LeftSidebarProps {
   onToggleCollapse: () => void;
   taskActivity: Record<string, 'busy' | 'idle' | 'waiting'>;
   remoteControlStates?: Record<string, RemoteControlState>;
+  onReorderProjects?: (reordered: Project[]) => void;
 }
 
 export function LeftSidebar({
@@ -44,6 +46,7 @@ export function LeftSidebar({
   onSelectProject,
   onOpenFolder,
   onDeleteProject,
+  onProjectSettings,
   tasksByProject,
   activeTaskId,
   onSelectTask,
@@ -57,9 +60,12 @@ export function LeftSidebar({
   onToggleCollapse,
   taskActivity,
   remoteControlStates = {},
+  onReorderProjects,
 }: LeftSidebarProps) {
   const [collapsedProjects, setCollapsedProjects] = useState<Set<string>>(new Set());
   const [collapsedArchived, setCollapsedArchived] = useState<Set<string>>(new Set());
+  const [draggingId, setDraggingId] = useState<string | null>(null);
+  const dragIdRef = useRef<string | null>(null);
 
   function toggleCollapse(projectId: string) {
     setCollapsedProjects((prev) => {
@@ -127,18 +133,48 @@ export function LeftSidebar({
             return (
               <button
                 key={project.id}
+                draggable
+                onDragStart={(e) => {
+                  dragIdRef.current = project.id;
+                  setDraggingId(project.id);
+                  e.dataTransfer.effectAllowed = 'move';
+                }}
+                onDragOver={(e) => {
+                  e.preventDefault();
+                  e.dataTransfer.dropEffect = 'move';
+                  const fromId = dragIdRef.current;
+                  if (!fromId || fromId === project.id) return;
+                  const fromIdx = projects.findIndex((p) => p.id === fromId);
+                  const toIdx = projects.findIndex((p) => p.id === project.id);
+                  if (fromIdx === -1 || toIdx === -1 || fromIdx === toIdx) return;
+                  const reordered = [...projects];
+                  const [moved] = reordered.splice(fromIdx, 1);
+                  reordered.splice(toIdx, 0, moved);
+                  onReorderProjects?.(reordered);
+                }}
+                onDrop={(e) => e.preventDefault()}
+                onDragEnd={() => {
+                  dragIdRef.current = null;
+                  setDraggingId(null);
+                }}
                 onClick={() => onSelectProject(project.id)}
-                className={`relative w-9 h-9 rounded-lg flex items-center justify-center flex-shrink-0 text-xs font-medium transition-all duration-150 titlebar-no-drag ${
+                className={`relative w-9 h-9 rounded-lg flex items-center justify-center flex-shrink-0 text-xs font-medium transition-transform duration-200 ease-in-out titlebar-no-drag ${
                   isActive
                     ? 'bg-primary/15 text-primary'
                     : 'text-muted-foreground hover:bg-accent/60 hover:text-foreground'
-                }`}
+                } ${draggingId === project.id ? 'opacity-40' : ''}`}
                 title={project.name}
               >
                 {project.name.charAt(0).toUpperCase()}
                 {activity && (
                   <div
-                    title={activity === 'waiting' ? 'Waiting for user' : activity === 'busy' ? 'Claude is working' : 'Idle'}
+                    title={
+                      activity === 'waiting'
+                        ? 'Waiting for user'
+                        : activity === 'busy'
+                          ? 'Claude is working'
+                          : 'Idle'
+                    }
                     className={`absolute -bottom-0.5 -right-0.5 w-2 h-2 rounded-full border-2 border-[hsl(var(--surface-1))] ${
                       activity === 'waiting'
                         ? 'bg-orange-500'
@@ -210,11 +246,37 @@ export function LeftSidebar({
               <div key={project.id}>
                 {/* Project row */}
                 <div
-                  className={`group flex items-center gap-1.5 px-2 h-8 rounded-md text-sm cursor-pointer transition-all duration-150 ${
+                  draggable
+                  onDragStart={(e) => {
+                    dragIdRef.current = project.id;
+                    setDraggingId(project.id);
+                    e.dataTransfer.effectAllowed = 'move';
+                    const el = e.currentTarget;
+                    e.dataTransfer.setDragImage(el, el.offsetWidth / 2, el.offsetHeight / 2);
+                  }}
+                  onDragOver={(e) => {
+                    e.preventDefault();
+                    e.dataTransfer.dropEffect = 'move';
+                    const fromId = dragIdRef.current;
+                    if (!fromId || fromId === project.id) return;
+                    const fromIdx = projects.findIndex((p) => p.id === fromId);
+                    const toIdx = projects.findIndex((p) => p.id === project.id);
+                    if (fromIdx === -1 || toIdx === -1 || fromIdx === toIdx) return;
+                    const reordered = [...projects];
+                    const [moved] = reordered.splice(fromIdx, 1);
+                    reordered.splice(toIdx, 0, moved);
+                    onReorderProjects?.(reordered);
+                  }}
+                  onDrop={(e) => e.preventDefault()}
+                  onDragEnd={() => {
+                    dragIdRef.current = null;
+                    setDraggingId(null);
+                  }}
+                  className={`group flex items-center gap-1.5 px-2 h-8 rounded-md text-sm cursor-pointer transition-transform duration-200 ease-in-out ${
                     isActive
                       ? 'text-foreground font-medium'
                       : 'text-muted-foreground hover:text-foreground'
-                  }`}
+                  } ${draggingId === project.id ? 'opacity-40' : ''}`}
                   onClick={() => {
                     onSelectProject(project.id);
                     if (collapsedProjects.has(project.id)) {
@@ -238,20 +300,22 @@ export function LeftSidebar({
 
                   <span className="truncate flex-1">{project.name}</span>
 
-                  {projectTasks.length > 0 && (
-                    <span className="text-[10px] text-foreground/50 tabular-nums flex-shrink-0 mr-0.5 leading-none">
-                      {projectTasks.length}
-                    </span>
-                  )}
+                  {/* New task — hover only */}
+                  <div className="opacity-0 group-hover:opacity-100 transition-opacity duration-150">
+                    <IconButton
+                      onClick={(e) => {
+                        e.stopPropagation();
+                        onNewTask(project.id);
+                      }}
+                      title="New task"
+                      size="sm"
+                    >
+                      <Plus size={13} strokeWidth={2} />
+                    </IconButton>
+                  </div>
 
-                  {/* Commit graph — visible on active project, hover on others */}
-                  <div
-                    className={`transition-opacity duration-150 ${
-                      isActive
-                        ? 'opacity-70 hover:opacity-100'
-                        : 'opacity-0 group-hover:opacity-100'
-                    }`}
-                  >
+                  {/* Commit graph — hover only */}
+                  <div className="opacity-0 group-hover:opacity-100 transition-opacity duration-150">
                     <IconButton
                       onClick={(e) => {
                         e.stopPropagation();
@@ -264,23 +328,17 @@ export function LeftSidebar({
                     </IconButton>
                   </div>
 
-                  {/* New task — visible on active project, hover on others */}
-                  <div
-                    className={`transition-opacity duration-150 ${
-                      isActive
-                        ? 'opacity-70 hover:opacity-100'
-                        : 'opacity-0 group-hover:opacity-100'
-                    }`}
-                  >
+                  {/* Project settings — hover only */}
+                  <div className="opacity-0 group-hover:opacity-100 transition-opacity duration-150">
                     <IconButton
                       onClick={(e) => {
                         e.stopPropagation();
-                        onNewTask(project.id);
+                        onProjectSettings(project.id);
                       }}
-                      title="New task"
+                      title="Project settings"
                       size="sm"
                     >
-                      <Plus size={13} strokeWidth={2} />
+                      <Settings size={14} strokeWidth={1.8} />
                     </IconButton>
                   </div>
 
@@ -298,6 +356,12 @@ export function LeftSidebar({
                       <Trash2 size={13} strokeWidth={1.8} />
                     </IconButton>
                   </div>
+
+                  {projectTasks.length > 0 && (
+                    <span className="text-xs text-muted-foreground tabular-nums flex-shrink-0 mr-0.5 leading-none">
+                      {projectTasks.length}
+                    </span>
+                  )}
                 </div>
 
                 {/* Tasks nested under project */}
@@ -323,11 +387,20 @@ export function LeftSidebar({
                           >
                             {/* Status indicator */}
                             {activity === 'waiting' ? (
-                              <div title="Waiting for user" className="w-[6px] h-[6px] rounded-full bg-orange-500 flex-shrink-0" />
+                              <div
+                                title="Waiting for user"
+                                className="w-[6px] h-[6px] rounded-full bg-orange-500 flex-shrink-0"
+                              />
                             ) : activity === 'busy' ? (
-                              <div title="Claude is working" className="w-[6px] h-[6px] rounded-full bg-amber-400 status-pulse flex-shrink-0" />
+                              <div
+                                title="Claude is working"
+                                className="w-[6px] h-[6px] rounded-full bg-amber-400 status-pulse flex-shrink-0"
+                              />
                             ) : activity === 'idle' ? (
-                              <div title="Idle" className="w-[6px] h-[6px] rounded-full bg-emerald-400 flex-shrink-0" />
+                              <div
+                                title="Idle"
+                                className="w-[6px] h-[6px] rounded-full bg-emerald-400 flex-shrink-0"
+                              />
                             ) : null}
                             {remoteControlStates[task.id] && (
                               <Globe

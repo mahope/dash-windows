@@ -8,7 +8,7 @@ Electron desktop app for running Claude Code across multiple projects, each task
 
 ```bash
 pnpm install              # install deps
-pnpm rebuild              # rebuild native modules (node-pty, better-sqlite3)
+npx electron-rebuild -f -w node-pty,better-sqlite3  # rebuild native modules for Electron
 pnpm dev                  # Vite on :3000 + Electron
 pnpm dev:main             # main process only
 pnpm dev:renderer         # Vite dev server only
@@ -37,7 +37,7 @@ Stateless singletons with static methods:
 
 | Service                   | Purpose                                                                                                                                                     |
 | ------------------------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| `DatabaseService`         | CRUD projects/tasks/conversations, upsert pattern, cascade deletes, linkedIssues as JSON                                                                    |
+| `DatabaseService`         | CRUD projects/tasks/conversations, upsert pattern, cascade deletes, linkedItems as JSON                                                                     |
 | `WorktreePoolService`     | Pre-creates reserve worktrees (<100ms task start). 30min expiry. Claims via `git worktree move` + `branch -m`                                               |
 | `WorktreeService`         | Create/remove worktrees, resolve base refs, copy preserved files (.env, .envrc, docker-compose.override.yml). Branch: `{slug}-{3char-hash}`                 |
 | `ptyManager`              | Two spawn paths: direct Claude CLI (bypasses shell, minimal env) and shell (fallback). Configures `.claude/settings.local.json` hooks. Reattaches on reload |
@@ -66,7 +66,7 @@ SQLite via better-sqlite3 + Drizzle ORM. WAL mode, 5s busy timeout, foreign keys
 **Tables** (cascade deletes: projects → tasks → conversations):
 
 - `projects`: id, name, path (unique), git_remote, git_branch, base_ref, timestamps
-- `tasks`: id, project_id (FK), name, branch, path, status, use_worktree, auto_approve, linked_issues (JSON), archived_at, timestamps
+- `tasks`: id, project_id (FK), name, branch, path, status, use_worktree, auto_approve, linked_items (JSON), archived_at, timestamps
 - `conversations`: id, task_id (FK), title, is_active, is_main, display_order, timestamps
 
 ### Renderer (`src/renderer/`)

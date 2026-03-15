@@ -14,6 +14,7 @@ import {
   defaultShell,
   shellArgs,
 } from '../platform';
+import type { TaskContextMeta } from '@shared/types';
 
 interface PtyRecord {
   proc: any; // IPty from node-pty
@@ -170,11 +171,7 @@ function buildDirectEnv(isDark: boolean): Record<string, string> {
  * Write .claude/task-context.json with issue context for the SessionStart hook.
  * Called from IPC during task creation, before Claude spawns.
  */
-export function writeTaskContext(
-  cwd: string,
-  prompt: string,
-  meta?: { issueNumbers: number[]; gitRemote?: string },
-): void {
+export function writeTaskContext(cwd: string, prompt: string, meta?: TaskContextMeta): void {
   const claudeDir = path.join(cwd, '.claude');
   const contextPath = path.join(claudeDir, 'task-context.json');
 
@@ -323,7 +320,7 @@ export async function startDirectPty(options: {
   reattached: boolean;
   isDirectSpawn: boolean;
   hasTaskContext: boolean;
-  taskContextMeta: { issueNumbers: number[]; gitRemote?: string } | null;
+  taskContextMeta: TaskContextMeta | null;
 }> {
   // Re-attach to existing PTY (e.g., after renderer reload)
   const existing = ptys.get(options.id);
@@ -400,7 +397,7 @@ export async function startDirectPty(options: {
   });
 
   const contextPath = path.join(options.cwd, '.claude', 'task-context.json');
-  let taskContextMeta: { issueNumbers: number[]; gitRemote?: string } | null = null;
+  let taskContextMeta: TaskContextMeta | null = null;
   try {
     if (fs.existsSync(contextPath)) {
       const parsed = JSON.parse(fs.readFileSync(contextPath, 'utf-8'));

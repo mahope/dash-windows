@@ -1,5 +1,5 @@
 import React, { useState, useEffect, useRef } from 'react';
-import { X, Check, AlertCircle, Sun, Moon, Terminal, RotateCcw, Download } from 'lucide-react';
+import { X, Check, AlertCircle, Sun, Moon, RotateCcw, Download } from 'lucide-react';
 import type { KeyBindingMap, KeyBinding } from '../keybindings';
 import {
   getBindingKeys,
@@ -31,6 +31,8 @@ interface SettingsModalProps {
   onShellDrawerPositionChange: (value: 'left' | 'main' | 'right') => void;
   terminalTheme: string;
   onTerminalThemeChange: (id: string) => void;
+  preferredIDE: 'cursor' | 'code' | 'auto';
+  onPreferredIDEChange: (value: 'cursor' | 'code' | 'auto') => void;
   commitAttribution: string | undefined;
   onCommitAttributionChange: (value: string | undefined) => void;
   pixelAgentsEnabled: boolean;
@@ -134,6 +136,8 @@ export function SettingsModal({
   onShellDrawerPositionChange,
   terminalTheme,
   onTerminalThemeChange,
+  preferredIDE,
+  onPreferredIDEChange,
   commitAttribution,
   onCommitAttributionChange,
   pixelAgentsEnabled,
@@ -145,9 +149,7 @@ export function SettingsModal({
   onKeybindingsChange,
   onClose,
 }: SettingsModalProps) {
-  const [tab, setTab] = useState<'general' | 'appearance' | 'keybindings' | 'connections'>(
-    'general',
-  );
+  const [tab, setTab] = useState<'general' | 'appearance' | 'keybindings'>('general');
   const [claudeInfo, setClaudeInfo] = useState<{
     installed: boolean;
     version: string | null;
@@ -243,7 +245,7 @@ export function SettingsModal({
 
         {/* Tabs */}
         <div className="flex gap-0 px-5 border-b border-border/40">
-          {(['general', 'appearance', 'keybindings', 'connections'] as const).map((t) => (
+          {(['general', 'appearance', 'keybindings'] as const).map((t) => (
             <button
               key={t}
               onClick={() => setTab(t)}
@@ -403,6 +405,40 @@ export function SettingsModal({
                 </p>
               </div>
 
+              {/* Preferred IDE */}
+              <div>
+                <label className="block text-[12px] font-medium text-foreground mb-3">
+                  Preferred IDE
+                </label>
+                <div className="grid grid-cols-3 gap-2">
+                  {(
+                    [
+                      { value: 'auto' as const, label: 'Auto-detect' },
+                      { value: 'cursor' as const, label: 'Cursor' },
+                      { value: 'code' as const, label: 'VS Code' },
+                    ] as const
+                  ).map(({ value, label }) => {
+                    const isActive = preferredIDE === value;
+                    return (
+                      <button
+                        key={value}
+                        onClick={() => onPreferredIDEChange(value)}
+                        className={`px-3 py-2.5 rounded-lg text-[12px] border transition-all duration-150 ${
+                          isActive
+                            ? 'border-primary/40 bg-primary/8 text-foreground ring-1 ring-primary/20 font-medium'
+                            : 'border-border/60 text-foreground/60 hover:bg-accent/40 hover:text-foreground'
+                        }`}
+                      >
+                        {label}
+                      </button>
+                    );
+                  })}
+                </div>
+                <p className="text-[10px] text-foreground/80 mt-2">
+                  IDE used when opening a task from the header
+                </p>
+              </div>
+
               {/* Commit Attribution */}
               <div>
                 <label className="block text-[12px] font-medium text-foreground mb-3">
@@ -461,6 +497,54 @@ export function SettingsModal({
                   Controls attribution appended to git commits by Claude. Default uses the Dash
                   attribution. Clear the field to disable attribution.
                 </p>
+              </div>
+
+              {/* Claude CLI */}
+              <div>
+                <label className="block text-[12px] font-medium text-foreground mb-3">
+                  Claude Code CLI
+                </label>
+                <div
+                  className="flex items-start gap-3.5 p-4 rounded-xl border border-border/40"
+                  style={{ background: 'hsl(var(--surface-2))' }}
+                >
+                  <div
+                    className={`w-8 h-8 rounded-lg flex items-center justify-center flex-shrink-0 ${
+                      claudeInfo?.installed
+                        ? 'bg-[hsl(var(--git-added)/0.12)]'
+                        : 'bg-[hsl(var(--git-modified)/0.12)]'
+                    }`}
+                  >
+                    {claudeInfo?.installed ? (
+                      <Check size={14} className="text-[hsl(var(--git-added))]" strokeWidth={2.5} />
+                    ) : (
+                      <AlertCircle
+                        size={14}
+                        className="text-[hsl(var(--git-modified))]"
+                        strokeWidth={2}
+                      />
+                    )}
+                  </div>
+                  <div className="min-w-0">
+                    {claudeInfo?.installed ? (
+                      <div className="space-y-0.5">
+                        <p className="text-[11px] text-foreground/60 font-mono">
+                          {claudeInfo.version}
+                        </p>
+                        <p className="text-[11px] text-foreground/40 font-mono truncate">
+                          {claudeInfo.path}
+                        </p>
+                      </div>
+                    ) : (
+                      <p className="text-[11px] text-foreground/60 leading-relaxed">
+                        Not found. Install with{' '}
+                        <code className="px-1.5 py-0.5 rounded bg-accent/80 text-[10px] font-mono text-foreground/70">
+                          npm install -g @anthropic-ai/claude-code
+                        </code>
+                      </p>
+                    )}
+                  </div>
+                </div>
               </div>
 
               {/* Updates */}
@@ -729,57 +813,6 @@ export function SettingsModal({
                   </div>
                 </div>
               ))}
-            </div>
-          )}
-
-          {tab === 'connections' && (
-            <div className="space-y-3 animate-fade-in">
-              {/* Claude CLI */}
-              <div
-                className="flex items-start gap-3.5 p-4 rounded-xl border border-border/40"
-                style={{ background: 'hsl(var(--surface-2))' }}
-              >
-                <div
-                  className={`w-8 h-8 rounded-lg flex items-center justify-center flex-shrink-0 ${
-                    claudeInfo?.installed
-                      ? 'bg-[hsl(var(--git-added)/0.12)]'
-                      : 'bg-[hsl(var(--git-modified)/0.12)]'
-                  }`}
-                >
-                  {claudeInfo?.installed ? (
-                    <Check size={14} className="text-[hsl(var(--git-added))]" strokeWidth={2.5} />
-                  ) : (
-                    <AlertCircle
-                      size={14}
-                      className="text-[hsl(var(--git-modified))]"
-                      strokeWidth={2}
-                    />
-                  )}
-                </div>
-                <div className="min-w-0">
-                  <div className="flex items-center gap-2 mb-1">
-                    <Terminal size={12} className="text-foreground/50" strokeWidth={2} />
-                    <p className="text-[13px] font-medium text-foreground/90">Claude Code CLI</p>
-                  </div>
-                  {claudeInfo?.installed ? (
-                    <div className="space-y-0.5">
-                      <p className="text-[11px] text-foreground/60 font-mono">
-                        {claudeInfo.version}
-                      </p>
-                      <p className="text-[11px] text-foreground/40 font-mono truncate">
-                        {claudeInfo.path}
-                      </p>
-                    </div>
-                  ) : (
-                    <p className="text-[11px] text-foreground/60 leading-relaxed">
-                      Not found. Install with{' '}
-                      <code className="px-1.5 py-0.5 rounded bg-accent/80 text-[10px] font-mono text-foreground/70">
-                        npm install -g @anthropic-ai/claude-code
-                      </code>
-                    </p>
-                  )}
-                </div>
-              </div>
             </div>
           )}
         </div>
